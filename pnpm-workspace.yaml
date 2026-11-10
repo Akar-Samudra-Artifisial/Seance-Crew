@@ -1,0 +1,10 @@
+packages:
+  - "backend"
+  - "ui"
+
+# @kirocrew/app-sdk is a peer of ui/ that the Kiro Crew host provides and that
+# is not on npm, so pnpm must not try to install peers automatically.
+autoInstallPeers: false
+
+allowBuilds:
+  esbuild: true

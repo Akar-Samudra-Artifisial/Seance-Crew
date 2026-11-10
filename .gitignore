@@ -1,0 +1,8 @@
+node_modules/
+spike/
+.env*
+data/
+.app_secret
+*.log
+coverage/
+.DS_Store

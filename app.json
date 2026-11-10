@@ -1,0 +1,73 @@
+{
+  "name": "seance-crew",
+  "version": "0.1.0",
+  "displayName": "Séance Crew",
+  "description": "Foreman for Séance coding channels: list channels, summon agents, grant or revoke op, read the log, watch commits and credits, and exorcise the agent when done.",
+  "author": "Akar Samudra Artifisial",
+  "iconPath": "assets/icon.png",
+  "agents": [
+    "agents/seance-steward.json"
+  ],
+  "skills": [
+    "skills/seance-steward"
+  ],
+  "tags": [
+    "irc",
+    "agents",
+    "devtools"
+  ],
+  "backend": {
+    "entryPoint": "backend/dist/server.js",
+    "port": "auto",
+    "healthCheck": "/health"
+  },
+  "ui": {
+    "entry": "dist/index.mjs",
+    "pages": [
+      {
+        "route": "/apps/seance-crew",
+        "label": "Séance Crew",
+        "icon": "Ghost"
+      }
+    ]
+  },
+  "permissions": {
+    "api": [
+      "/api/state",
+      "/api/summary",
+      "/api/summon",
+      "/api/grant-op",
+      "/api/exorcise",
+      "/api/inbox/dismiss"
+    ]
+  },
+  "mcpServers": {
+    "seance": {
+      "url": "http://127.0.0.1:9100/mcp"
+    }
+  },
+  "setup": {
+    "configSchema": {
+      "type": "object",
+      "properties": {
+        "host": {
+          "type": "string",
+          "title": "Séance host",
+          "default": "35-172-120-185.sslip.io"
+        },
+        "nick": {
+          "type": "string",
+          "title": "Account nick",
+          "default": "crew"
+        },
+        "secret": {
+          "type": "string",
+          "title": "Account secret"
+        }
+      }
+    }
+  },
+  "credentialMasks": [
+    "secret"
+  ]
+}

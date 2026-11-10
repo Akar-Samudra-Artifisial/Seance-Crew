@@ -1,0 +1,8 @@
+@seance/irc-protocol (vendored)
+
+Source:  https://github.com/Akar-Samudra-Artifisial/Seance (packages/irc-protocol)
+License: MIT, Copyright (c) 2026 Akar Samudra Artifisial
+
+The files under src/ and test/ are copied unchanged from the source repository
+so the client parses and serializes exactly like the Séance server. Do not edit
+them here; update them by re-copying from the source repository.
