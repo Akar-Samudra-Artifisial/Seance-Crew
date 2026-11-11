@@ -4,6 +4,7 @@ import { createApiRoute } from "./api/routes.js";
 import type { Clock } from "./clock.js";
 import { loadConfig, type FetchLike } from "./config.js";
 import { createConfigWatcher, type ConfigWatcher } from "./config-watch.js";
+import { createCreditsSnapshot } from "./credits-snapshot.js";
 import { closeServer, createHttpServer, listen, type Route } from "./http.js";
 import type { IrcBridge } from "./irc/client.js";
 import type { SocketFactory } from "./irc/socket.js";
@@ -15,6 +16,7 @@ import { createMcpRoute } from "./mcp/handler.js";
 import { createToolRegistry } from "./mcp/tools.js";
 import type { SummaryProvider } from "./mcp/types.js";
 import { ensureDataDir, type AppPaths } from "./paths.js";
+import { createSummaryService, type SummaryService } from "./summary.js";
 
 export const SWEEP_INTERVAL_MS = 60_000;
 
@@ -29,8 +31,13 @@ export interface AppDeps {
   readonly createSocket?: SocketFactory;
   readonly lockDeps?: LockDeps;
   readonly routes?: readonly Route[];
-  /** Daily summary for the `credits` tool (wired by steward-agent). */
+  /** Replaces the built-in daily summary as the provider for the `credits` tool and GET /api/summary (tests). */
   readonly summary?: SummaryProvider;
+  /**
+   * Run the in-process background services: the credits snapshot (data/credits.json) and the daily summary
+   * (data/summary.json). Off by default so tests that boot the app stay free of timers and files; server.ts turns it on.
+   */
+  readonly background?: boolean;
   readonly random?: () => number;
 }
 
@@ -42,6 +49,8 @@ export interface RunningApp {
   readonly rebuilder: Rebuilder;
   readonly lock: Lock | null;
   readonly watcher: ConfigWatcher | null;
+  /** The daily summary service; null unless `background` was set. */
+  readonly summaryService: SummaryService | null;
   stop(): Promise<void>;
 }
 
@@ -67,9 +76,17 @@ export async function startApp(deps: AppDeps): Promise<RunningApp> {
 
   // One info line per state change (no credentials in it); /health itself never carries the state.
   store.on("state", (event) => logger.info("bridge state", { state: event.state }));
+  // Credits snapshot and daily summary run inside this process on the shared store and send queue: no cron, no second
+  // process, no second connection. Seed the snapshot before the bridge connects so last known figures show at once.
+  const snapshot = deps.background === true ? createCreditsSnapshot({ store, paths, clock, logger }) : null;
+  const summaryService = deps.background === true ? createSummaryService({ store, bridge, paths, clock, logger }) : null;
+  snapshot?.load();
+  // One provider for both surfaces (GET /api/summary and the `credits` tool), so they always agree.
+  const summaryProvider: SummaryProvider | undefined = deps.summary ?? summaryService ?? undefined;
+
   // /mcp needs the live port for its Host check, which is known only after listen.
   let listenPort = 0;
-  const registry = createToolRegistry({ store, bridge, clock, logger, ...(deps.summary === undefined ? {} : { summary: deps.summary }) });
+  const registry = createToolRegistry({ store, bridge, clock, logger, ...(summaryProvider === undefined ? {} : { summary: summaryProvider }) });
   const mcpRoute = createMcpRoute({ port: () => listenPort, gatewayOrigin: deps.env["KIROCREW_GATEWAY_ORIGIN"], registry, logger });
   // /api/* shares the registry (and so the rate limits and channel locks) with /mcp; it is closed without a proxy secret.
   const apiRoute = createApiRoute({
@@ -80,7 +97,7 @@ export async function startApp(deps: AppDeps): Promise<RunningApp> {
     bridge,
     registry,
     now: () => clock.now(),
-    ...(deps.summary === undefined ? {} : { summary: deps.summary }),
+    ...(summaryProvider === undefined ? {} : { summary: summaryProvider }),
   });
   const server = createHttpServer({ logger, routes: [mcpRoute, apiRoute, ...(deps.routes ?? [])] });
   let port: number;
@@ -114,6 +131,11 @@ export async function startApp(deps: AppDeps): Promise<RunningApp> {
     });
     await watcher.start();
   }
+  // A duplicate instance (no lock) must not touch the data files the real instance owns.
+  if (lock !== null) {
+    snapshot?.start();
+    summaryService?.start();
+  }
 
   return {
     server,
@@ -123,9 +145,13 @@ export async function startApp(deps: AppDeps): Promise<RunningApp> {
     rebuilder,
     lock,
     watcher,
+    summaryService,
     stop: async () => {
       if (sweepTimer !== undefined) clock.clearTimeout(sweepTimer);
       sweepTimer = undefined;
+      // Stop the timer first so no run starts during shutdown; the snapshot writes once more if a change is waiting.
+      summaryService?.stop();
+      snapshot?.stop();
       watcher?.stop();
       bridge.stop();
       await closeServer(server);

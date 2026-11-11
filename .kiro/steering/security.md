@@ -21,6 +21,7 @@ Séance Crew lets an AI agent steer other AI agents that can write code, so secu
 
 - `KICK` (exorcise) and `MODE` (grant or revoke op) require `confirm: true` in the MCP call and in the dashboard API call. Without it, return an error that explains how to confirm; never act.
 - Prefer `+v` over `+o`. The steward asks the human before any `+o`.
+- **Second layer next to `confirm`: the host approval prompt.** `agents/seance-steward.json` auto-approves (`allowedTools`) only the read-only tools `list_channels`, `read`, `whois` and `credits`. `say`, `summon`, `grant_op` and `exorcise` still go through the Kiro Crew approval prompt. That prompt is a human check that channel text (prompt injection) cannot fill in, unlike `confirm`, which the model sets itself. Never add a write tool or the bare server name to `allowedTools`; `backend/test/manifest.test.ts` fails if you do.
 
 ## Line validation
 

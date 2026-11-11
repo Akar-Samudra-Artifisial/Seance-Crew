@@ -46,7 +46,7 @@ export interface ChannelCredits {
   used: number | null;
   total: number | null;
   /** WHOIS is authoritative; the "credits used" notice is only a fallback. */
-  source: "whois" | "notice" | null;
+  source: "whois" | "notice" | "snapshot" | null;
 }
 
 export interface Channel {
@@ -353,6 +353,22 @@ export class Store {
     channel.credits.total = total;
     channel.credits.source = "whois";
     this.emit({ type: "credits", channel: channel.name, used, total });
+  }
+
+  /**
+   * Seed last known credits from the on-disk snapshot at start. The values are marked `source: "snapshot"` (stale):
+   * any WHOIS or notice figure replaces them, and nothing is emitted. A channel the bridge has not seen yet is created
+   * as "left", so it stays out of the channel list until a LIST shows it, and is dropped by `sweep` otherwise.
+   */
+  seedCredits(channelName: string, used: number, total: number | null): void {
+    const known = this.channel(channelName) !== undefined;
+    const channel = this.ensureChannel(channelName);
+    if (channel.credits.source !== null) return;
+    channel.credits.used = used;
+    channel.credits.total = total;
+    channel.credits.source = "snapshot";
+    if (!known) channel.leftAt = this.clock.now();
+    this.bump();
   }
 
   setCreditsFromNotice(channel: Channel, used: number): void {

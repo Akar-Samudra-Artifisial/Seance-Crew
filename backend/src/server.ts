@@ -79,6 +79,7 @@ async function main(): Promise<void> {
     logger,
     fetch: (url, init) => fetch(url, init),
     readFile: (file) => readFile(file, "utf8"),
+    background: true,
   });
   if (app.lock !== null) registerLockRelease(app.lock);
   if (pendingSignal !== undefined) shutdown(pendingSignal);

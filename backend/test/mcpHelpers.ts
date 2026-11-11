@@ -17,6 +17,8 @@ export const MCP_TOKEN = "token-mcp-2342";
 
 export interface McpHarness {
   readonly app: RunningApp;
+  /** The temp app root (holds app.json and data/). */
+  readonly root: string;
   readonly ircd: FakeIrcd;
   readonly clock: FakeClock;
   readonly logs: string[];
@@ -65,6 +67,8 @@ export interface BootOptions {
   readonly gatewayOrigin?: string;
   /** KIROCREW_PROXY_SECRET for the app's environment; omitted means unset. */
   readonly proxySecret?: string;
+  /** Run the credits snapshot and the daily summary (off by default). */
+  readonly background?: boolean;
 }
 
 export async function bootMcp(options: BootOptions = {}): Promise<McpHarness> {
@@ -93,6 +97,7 @@ export async function bootMcp(options: BootOptions = {}): Promise<McpHarness> {
     createSocket: (url) => ircd.connect(url),
     random: () => 0,
     ...(options.summary === undefined ? {} : { summary: options.summary }),
+    ...(options.background === true ? { background: true } : {}),
   });
   apps.push(app);
   ircd.run();
@@ -153,6 +158,7 @@ export async function bootMcp(options: BootOptions = {}): Promise<McpHarness> {
 
   return {
     app,
+    root,
     ircd,
     clock,
     logs,

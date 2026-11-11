@@ -192,6 +192,15 @@ describe("summon", () => {
     expect(html).toContain('aria-busy="true"');
   });
 
+  it("keeps the Summon button focusable while pending: aria-disabled, never the disabled attribute", () => {
+    const render = (pending: boolean) => renderToStaticMarkup(<SummonForm channel="#a" agent="" pending={pending} message={null} onChange={() => undefined} onSubmit={() => undefined} />);
+    const button = (html: string) => /<button [^>]*type="submit"[^>]*>/.exec(html)?.[0] ?? "";
+    expect(button(render(true))).toContain('aria-disabled="true"');
+    expect(button(render(true))).not.toMatch(/\sdisabled(=|\s|>)/);
+    expect(button(render(false))).toContain('aria-disabled="false"');
+    expect(button(render(false))).not.toMatch(/\sdisabled(=|\s|>)/);
+  });
+
   it("labels its fields", () => {
     const html = renderToStaticMarkup(<SummonForm channel="" agent="" pending={false} message={null} onChange={() => undefined} onSubmit={() => undefined} />);
     expect(html).toMatch(/<label for="[^"]+"[^>]*>Channel<\/label>/);

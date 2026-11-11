@@ -727,7 +727,7 @@ function SummonForm({ channel, agent, pending, message, onChange, onSubmit }) {
         /* @__PURE__ */ jsx10("label", { htmlFor: agentId, style: styles.label, children: "Agent (optional)" }),
         /* @__PURE__ */ jsx10("input", { id: agentId, name: "agent", style: styles.input, value: agent, placeholder: "coder", onChange: (e) => onChange("agent", e.target.value) })
       ] }),
-      /* @__PURE__ */ jsx10("button", { type: "submit", style: buttonStyle("primary", pending), disabled: pending, children: pending ? "Summoning\u2026" : "Summon" }),
+      /* @__PURE__ */ jsx10("button", { type: "submit", style: buttonStyle("primary", pending), "aria-disabled": pending, children: pending ? "Summoning\u2026" : "Summon" }),
       pending ? /* @__PURE__ */ jsx10("p", { role: "status", style: styles.hint, children: "Joining the channel if needed, then waiting for the agent to say it is ready. This can take up to 30 seconds." }) : null,
       message === null ? null : message.ok ? /* @__PURE__ */ jsx10("p", { role: "status", style: styles.text, children: message.text }) : /* @__PURE__ */ jsxs10("p", { role: "alert", style: { ...styles.text, fontWeight: 600 }, children: [
         "Failed: ",

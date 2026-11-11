@@ -44,7 +44,8 @@ export function SummonForm({ channel, agent, pending, message, onChange, onSubmi
           </label>
           <input id={agentId} name="agent" style={styles.input} value={agent} placeholder="coder" onChange={(e) => onChange("agent", e.target.value)} />
         </div>
-        <button type="submit" style={buttonStyle("primary", pending)} disabled={pending}>
+        {/* aria-disabled, not disabled: a disabled button drops focus to <body>. submit() ignores presses while pending. */}
+        <button type="submit" style={buttonStyle("primary", pending)} aria-disabled={pending}>
           {pending ? "Summoning…" : "Summon"}
         </button>
         {pending ? (

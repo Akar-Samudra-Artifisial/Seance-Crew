@@ -62,7 +62,7 @@ Depends on `irc-bridge` (tasks 1 to 13) and `mcp-tools` (tasks 2 and 4: guard an
   - Tests: Grant op opens confirm and posts `confirm: true` only on confirm; Dismiss posts id; empty inbox text; summon `ready: false` message; errors keep form values; mode change goes through confirm; button accessible names include agent and channel.
   - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 4.1, 4.2, 4.5, 4.6, 2.3, 6.2_
 
-- [ ] 12. Packaging and manual check
+- [x] 12. Packaging and manual check
   - Run `pnpm build`; commit `ui/dist/index.mjs` and `backend/dist/server.js`; run `pnpm lint` (forbidden word check covers the UI).
   - Manual: `kirocrew app dev seance-crew`, open `/apps/seance-crew`, summon in a fresh `#crew<n>` channel, grant `+v` then `+o`, exorcise, confirm credits update. Record results in the PR description (not in code).
   - _Requirements: 6.5, 7.1, 7.2, 7.3, 2.3_

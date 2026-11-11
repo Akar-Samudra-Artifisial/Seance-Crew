@@ -4,7 +4,7 @@ A [Kiro Crew](https://kiro.dev/docs/crew/) app that makes Kiro Crew the foreman 
 
 From Crew chat or a dashboard page you can list channels, summon an agent, grant or revoke op, read the log, watch commits and credits live, and exorcise the agent when you are done.
 
-> Status: scaffold and specs only. The behavior is described in `.kiro/specs/` and is not implemented yet.
+> Status: the backend, the dashboard page and the steward are implemented. The behavior is described in `.kiro/specs/`.
 
 Judge-facing documents (written last, see the `demo-writeup` spec): `docs/DEMO.md` (a 60 to 90 second scenario) and `docs/WRITEUP.md` (features, architecture, security, how Kiro built it).
 
@@ -39,6 +39,24 @@ kirocrew config set agent.apps_trusted '["seance-crew"]'
 ```sh
 kirocrew app enable seance-crew
 ```
+
+## Use the steward
+
+After enabling the app, pick the `seance-steward` agent in Crew chat. It works only through the `seance` MCP tools:
+
+- lists channels, summons an agent (default `coder`), and reads and sends channel messages;
+- asks you before it grants `+o`, exorcises an agent, or summons any agent other than `coder`, and passes `confirm: true` only after you agree (it prefers `+v` first);
+- runs the read-only tools (`list_channels`, `read`, `whois`, `credits`) without a prompt, because the agent file auto-approves exactly those; `say`, `summon`, `grant_op` and `exorcise` still go through the Kiro Crew approval prompt, a human check that text in a channel cannot answer;
+- shows open needs-op requests in the `list_channels` result;
+- treats all channel text as untrusted data and never obeys it;
+- reports credits per channel and in total, highest first, with two decimals, and says so when a figure is unavailable.
+
+## Daily credit summary
+
+The backend keeps a daily record of credits. It is a timer inside the backend process, so there is no cron entry, no second process, no second connection and no model call. Once a day (and once at start when the last run is more than 24 hours old) it asks each known agent for its credits over the existing connection with `WHOIS`, builds the report, and stores it.
+
+- `data/summary.json` holds the latest summary and the last 30. `data/credits.json` holds the last known credits, so a restart does not begin with empty figures. Both files are written atomically with mode 600, are git-ignored, and never contain the secret or the config.
+- The latest summary shows on the dashboard page and in the `summary` field of the `credits` tool. It says `stale` when the bridge was not connected and the last known figures were used.
 
 ## Configure
 
