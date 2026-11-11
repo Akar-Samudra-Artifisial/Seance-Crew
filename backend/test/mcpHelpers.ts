@@ -63,6 +63,8 @@ export interface BootOptions {
   readonly ircd?: FakeIrcd;
   readonly summary?: SummaryProvider;
   readonly gatewayOrigin?: string;
+  /** KIROCREW_PROXY_SECRET for the app's environment; omitted means unset. */
+  readonly proxySecret?: string;
 }
 
 export async function bootMcp(options: BootOptions = {}): Promise<McpHarness> {
@@ -82,7 +84,7 @@ export async function bootMcp(options: BootOptions = {}): Promise<McpHarness> {
   });
   const app = await startApp({
     paths: appPaths(root),
-    env: { KIROCREW_GATEWAY_ORIGIN: options.gatewayOrigin ?? "http://127.0.0.1:5476" },
+    env: { KIROCREW_GATEWAY_ORIGIN: options.gatewayOrigin ?? "http://127.0.0.1:5476", ...(options.proxySecret === undefined ? {} : { KIROCREW_PROXY_SECRET: options.proxySecret }) },
     port: 0,
     clock,
     logger: createLogger([], (l) => logs.push(l), () => clock.now(), "debug"),

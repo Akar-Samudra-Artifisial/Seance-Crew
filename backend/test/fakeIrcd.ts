@@ -93,6 +93,8 @@ export class FakeIrcd {
   refuseConnections = false;
   /** When true WHOIS commands are recorded but never answered. */
   silentWhois = false;
+  /** lower-cased channel name -> numeric (for example "474") answered to JOIN instead of joining; "" means no answer. */
+  joinRefusals: Record<string, string> = {};
   readonly connections: FakeConnection[] = [];
   readonly hooks: LineHook[] = [];
   maxConcurrent = 0;
@@ -246,6 +248,22 @@ export class FakeIrcd {
         const lines = channel === undefined ? [] : [`:${s} 353 ${me} = ${channel.name} :${channel.names.join(" ")}`];
         lines.push(`:${s} 366 ${me} ${name} :End of /NAMES list.`);
         this.sendLines(conn, lines);
+        break;
+      }
+      case "JOIN": {
+        const name = m.params[0] ?? "";
+        const refusal = this.joinRefusals[name.toLowerCase()];
+        if (refusal === "") break; // "" = never answer
+        if (refusal !== undefined) {
+          this.reply(conn, `:${s} ${refusal} ${me} ${name} :Cannot join channel`);
+          break;
+        }
+        const existing = this.channels.find((c) => c.name.toLowerCase() === name.toLowerCase());
+        const names = existing?.names ?? [];
+        const joinedNames = names.some((n) => n.replace(/^[@+]/, "").toLowerCase() === me.toLowerCase()) ? names : [...names, `@${me}`];
+        const channel: FakeChannel = { name: existing?.name ?? name, topic: existing?.topic ?? "", count: joinedNames.length, names: joinedNames };
+        this.channels = [...this.channels.filter((c) => c !== existing), channel];
+        this.sendLines(conn, [`:${me}!u@h JOIN ${channel.name}`, `:${s} 353 ${me} = ${channel.name} :${channel.names.join(" ")}`, `:${s} 366 ${me} ${channel.name} :End of /NAMES list.`]);
         break;
       }
       case "WHOIS": {

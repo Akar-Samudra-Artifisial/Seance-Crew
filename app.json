@@ -33,12 +33,12 @@
   },
   "permissions": {
     "api": [
-      "/api/state",
-      "/api/summary",
-      "/api/summon",
-      "/api/grant-op",
-      "/api/exorcise",
-      "/api/inbox/dismiss"
+      "/apps/seance-crew/api/state",
+      "/apps/seance-crew/api/summary",
+      "/apps/seance-crew/api/summon",
+      "/apps/seance-crew/api/grant-op",
+      "/apps/seance-crew/api/exorcise",
+      "/apps/seance-crew/api/inbox/dismiss"
     ]
   },
   "mcpServers": {

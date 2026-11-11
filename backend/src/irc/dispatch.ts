@@ -361,11 +361,14 @@ export function createDispatcher(store: Store, hooks: DispatchHooks = {}, logger
       case "442":
       case "443":
       case "461":
+      case "471":
       case "472":
       case "473":
+      case "474":
+      case "475":
       case "481":
       case "482":
-        // Replies to commands we sent (INVITE, MODE, KICK, PRIVMSG); tools waiting on an outcome listen for them.
+        // Replies to commands we sent (JOIN, INVITE, MODE, KICK, PRIVMSG); tools waiting on an outcome listen for them.
         store.emit({ type: "server-error", numeric: message.command, target: p[1] ?? "", text: p[p.length - 1] ?? "" });
         break;
       case "318":

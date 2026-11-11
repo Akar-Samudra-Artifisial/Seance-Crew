@@ -6,7 +6,7 @@ import { irc_lower } from "../../vendor/irc-protocol/src/index.js";
 import { defineTool } from "./define.js";
 import { takeSay, takeSummon, withChannelLock, SAY_LIMIT, SUMMON_LIMIT } from "./guards.js";
 import { requireRegistered, trySend } from "./send.js";
-import { errorResult, textResult, type ToolResult } from "./types.js";
+import { errorResult, textResult, type McpContext, type ToolResult } from "./types.js";
 import { wrapUntrusted } from "./untrusted.js";
 import { waitForEvent, type Waiter } from "./waiters.js";
 import { channel, confirmFlag, enumOf, nick, optional, string } from "./validate.js";
@@ -65,7 +65,7 @@ function inviteRefusal(numeric: string, channelName: string, agent: string): str
         `check SEANCE_INVITERS on the server, and that the crew nick is an operator in ${channelName}.`
       );
     case "403":
-      return `The server says ${channelName} does not exist (403). Join or create the channel first.`;
+      return `The server says ${channelName} does not exist (403).`;
     case "442":
       return `The crew account is not in ${channelName} (442), so it cannot invite anyone there.`;
     default:
@@ -73,10 +73,60 @@ function inviteRefusal(numeric: string, channelName: string, agent: string): str
   }
 }
 
+export const JOIN_TIMEOUT_MS = 10_000;
+// Séance accepts INVITE only from a channel member, so summon joins first. 403 = no such channel (bad name).
+const JOIN_ERRORS = new Set(["471", "473", "474", "475", "403"]);
+
+function joinRefusal(numeric: string, channelName: string): string {
+  const why: Record<string, string> = {
+    "471": "the channel is full (+l)",
+    "473": "the channel is invite-only (+i)",
+    "474": "the crew account is banned from it (+b)",
+    "475": "the channel needs a key (+k)",
+    "403": "the server says the channel does not exist or the name is not allowed",
+  };
+  return `The crew account could not join ${channelName} (${numeric}): ${why[numeric] ?? "the server refused"}. No invite was sent.`;
+}
+
+/**
+ * Make sure the bridge is a member of the channel. Already a member: nothing is sent. Otherwise send JOIN and wait up
+ * to 10 s for our own JOIN and the end of NAMES (366). Returns an error result, or null when the bridge is in.
+ * There is deliberately no re-join on reconnect: membership is only (re)established by the next summon.
+ */
+async function ensureJoined(ctx: McpContext, channelName: string): Promise<ToolResult | null> {
+  const own = irc_lower(ctx.store.ownNick);
+  if (ctx.store.channel(channelName)?.members.has(own) === true) return null;
+  const key = irc_lower(channelName);
+  const joined = waitForEvent(ctx, "line", (e) => irc_lower(e.channel) === key && e.line.kind === "join" && irc_lower(e.line.from) === own, JOIN_TIMEOUT_MS);
+  const names = waitForEvent(ctx, "names-done", (e) => irc_lower(e.channel) === key, JOIN_TIMEOUT_MS);
+  const rejected = waitForEvent(ctx, "server-error", (e) => JOIN_ERRORS.has(e.numeric) && irc_lower(e.target) === key, JOIN_TIMEOUT_MS);
+  try {
+    const failed = trySend(ctx, "JOIN", [channelName], "normal");
+    if (failed !== null) return failed;
+    const settled = await Promise.race([
+      Promise.all([joined.promise, names.promise]).then((pair) => ({ pair })),
+      rejected.promise.then((refusal) => ({ refusal })),
+    ]);
+    if ("refusal" in settled) {
+      const r = settled.refusal;
+      if (r.kind === "event") return errorResult(joinRefusal(r.event.numeric, channelName));
+      if (r.kind === "disconnected") return errorResult(`The bridge is ${ctx.bridge.state}; the connection was lost while joining ${channelName}.`);
+      return errorResult(`Joining ${channelName} timed out after ${JOIN_TIMEOUT_MS / 1000} s. No invite was sent.`);
+    }
+    const [a, b] = settled.pair;
+    if (a.kind === "disconnected" || b.kind === "disconnected") return errorResult(`The bridge is ${ctx.bridge.state}; the connection was lost while joining ${channelName}.`);
+    if (a.kind === "timeout" || b.kind === "timeout") return errorResult(`Joining ${channelName} timed out after ${JOIN_TIMEOUT_MS / 1000} s (no JOIN and NAMES reply from the server). No invite was sent.`);
+    return null;
+  } finally {
+    cancelAll([joined, names, rejected]);
+  }
+}
+
 export const summonTool = defineTool({
   name: "summon",
   description:
-    "Invite an agent (default `coder`) into a channel and wait up to 20 seconds for it to say it is ready. A timeout is a normal result (`ready: false`), not an error. " +
+    "Invite an agent (default `coder`) into a channel and wait up to 20 seconds for it to say it is ready. The crew account joins the channel first when it is not a member (the server only accepts invites from members); a refused join is an error. " +
+    "A timeout is a normal result (`ready: false`), not an error. " +
     `Any agent other than \`coder\` needs \`confirm: true\`, set only after the human agrees. At most ${SUMMON_LIMIT} summons per channel per 10 minutes. ` +
     "The account must be allowed to invite on the server (SEANCE_INVITERS).",
   shape: {
@@ -93,6 +143,8 @@ export const summonTool = defineTool({
     const taken = takeSummon(ctx, args.channel);
     if (!taken.ok) return rateLimited(`summon is limited to ${SUMMON_LIMIT} calls per channel per 10 minutes`, taken.retryAfterSec);
     return withChannelLock(ctx, args.channel, async () => {
+      const joinFailed = await ensureJoined(ctx, args.channel);
+      if (joinFailed !== null) return joinFailed;
       const channelKey = irc_lower(args.channel);
       const agentKey = irc_lower(agent);
       const ready = waitForEvent(ctx, "ready", (e) => irc_lower(e.channel) === channelKey && irc_lower(e.agent) === agentKey, SUMMON_TIMEOUT_MS);

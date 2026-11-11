@@ -19,6 +19,8 @@ The MCP handler is a stateless HTTP layer on the backend's single `node:http` se
 
 `summon`, `exorcise` and `whois` register a one-shot listener on the store's event emitter before sending, then send, then await the matching event or timeout (20 s, 10 s, 5 s). Listeners are always removed in a `finally`. A timed-out `summon` returns `ready: false` as a normal result, since some agents take longer to start.
 
+`summon` is the shared path for MCP and `/api/summon`. Séance only accepts `INVITE` from a channel member (otherwise it answers 403 "no such channel"), so inside the per-channel lock `summon` first checks `store.channel(name).members` for the bridge's own nick. If it is absent, it sends `JOIN`, waits up to 10 s for its own `join` line and `names-done` (366), and fails fast on 471/473/474/475/403 (`server-error`) with an error that says no invite was sent. Then it sends `INVITE` as before. The bridge does not re-join channels on reconnect; the next `summon` joins again.
+
 ### Local-caller protection
 
 `src/http/guard.ts` exports `checkLocalCaller(req, { port, gatewayOrigin })` returning `{ ok: true }` or `{ ok: false, status: 421 | 403, code }`. It is used by the `/mcp` handler and, in `dashboard-ui`, by the `/api/*` router.
@@ -64,7 +66,7 @@ All inputs use `additionalProperties: false`.
 | `list_channels` | `{}` | Reads store. |
 | `read` | `{ channel, since?: int ≥ 0, limit?: int 1..200 }` | Reads ring buffer. |
 | `say` | `{ channel, text: string 1..400 }` | `PRIVMSG`; 20 lines per minute in total. |
-| `summon` | `{ channel, agent?: nick, confirm?: boolean }` | `INVITE`, waits for `<agent> is ready`; `confirm: true` for any agent but `coder`; 3 per channel per 10 min. |
+| `summon` | `{ channel, agent?: nick, confirm?: boolean }` | `JOIN` first if the bridge is not a member (waits up to 10 s for own JOIN + 366; 471/473/474/475/403 are errors, no INVITE), then `INVITE`, waits for `<agent> is ready`; `confirm: true` for any agent but `coder`; 3 per channel per 10 min. |
 | `grant_op` | `{ channel, agent, mode: "+v"\|"-v"\|"+o"\|"-o", confirm: boolean }` | `MODE`, needs `confirm: true`; waits for the server's `MODE` echo. |
 | `exorcise` | `{ channel, agent, reason?: string ≤ 200, confirm: boolean }` | `KICK`, needs `confirm: true`. |
 | `whois` | `{ nick }` | `WHOIS`, waits for `318`. |

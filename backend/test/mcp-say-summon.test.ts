@@ -223,6 +223,68 @@ describe("summon", () => {
   });
 });
 
+describe("summon joins first (Séance only accepts INVITE from a member)", () => {
+  const cmds = (lines: readonly string[]): string[] => lines.filter((l) => /^(JOIN|INVITE) /.test(l));
+
+  it("not a member: sends JOIN, waits for our JOIN and 366, then INVITE", async () => {
+    const ircd = new FakeIrcd();
+    inviteHook(ircd, (nick, channel) => readyNotice(nick, channel));
+    const h = await bootMcp({ ircd });
+    const base = h.sent().length;
+    const result = await h.call("summon", { channel: "#fresh" });
+    expect(result.isError).toBeUndefined();
+    expect(structured(result)["ready"]).toBe(true);
+    expect(cmds(since(h.sent(), base))).toEqual(["JOIN #fresh", "INVITE coder #fresh"]);
+  });
+
+  it("already a member: sends INVITE only", async () => {
+    const ircd = new FakeIrcd();
+    ircd.channels = [{ name: "#fix", topic: "", count: 1, names: ["@crew"] }];
+    inviteHook(ircd, (nick, channel) => readyNotice(nick, channel));
+    const h = await bootMcp({ ircd });
+    const base = h.sent().length;
+    const result = await h.call("summon", { channel: "#fix" });
+    expect(result.isError).toBeUndefined();
+    expect(cmds(since(h.sent(), base))).toEqual(["INVITE coder #fix"]);
+  });
+
+  it.each(["471", "473", "474", "475", "403"])("JOIN refused with %s: clear error and no INVITE", async (numeric) => {
+    const ircd = new FakeIrcd();
+    ircd.joinRefusals["#closed"] = numeric;
+    inviteHook(ircd, (nick, channel) => readyNotice(nick, channel));
+    const h = await bootMcp({ ircd });
+    const result = await h.call("summon", { channel: "#closed" });
+    expect(result.isError).toBe(true);
+    expect(textOf(result)).toContain(`(${numeric})`);
+    expect(textOf(result)).toContain("No invite was sent");
+    expect(ircd.allLines.some((l) => l.startsWith("INVITE"))).toBe(false);
+  });
+
+  it("times out after 10 s when the server never answers the JOIN, and sends no INVITE", async () => {
+    const ircd = new FakeIrcd();
+    ircd.joinRefusals["#silent"] = ""; // the fake never answers this JOIN
+    const h = await bootMcp({ ircd });
+    const pending = h.call("summon", { channel: "#silent" });
+    await eventually(() => h.sent().includes("JOIN #silent"));
+    h.clock.advance(10_000);
+    const result = await pending;
+    expect(result.isError).toBe(true);
+    expect(textOf(result)).toContain("timed out");
+    expect(ircd.allLines.some((l) => l.startsWith("INVITE"))).toBe(false);
+  });
+
+  it("does not re-join after a reconnect", async () => {
+    const ircd = new FakeIrcd();
+    inviteHook(ircd, (nick, channel) => readyNotice(nick, channel));
+    const h = await bootMcp({ ircd });
+    await h.call("summon", { channel: "#fresh" });
+    ircd.drop(ircd.last);
+    h.advance(60_000);
+    expect(ircd.connections.length).toBeGreaterThan(1);
+    expect(ircd.last.received.some((l) => l.startsWith("JOIN"))).toBe(false);
+  });
+});
+
 describe("summon guard (review fix 6)", () => {
   const readyHook = (): FakeIrcd => {
     const ircd = new FakeIrcd();

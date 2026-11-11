@@ -58,7 +58,7 @@ One Kiro Crew dashboard page (`/apps/seance-crew`) shows the Séance channels th
 
 #### Acceptance Criteria
 
-1. THE page SHALL offer a "Summon" form with a channel field (must start with `#`) and an optional agent field (default `coder`), and SHALL call `POST /api/summon`.
+1. THE page SHALL offer a "Summon" form with a channel field (must start with `#`) and an optional agent field (default `coder`), and SHALL call `POST /api/summon`; the form text SHALL say that the crew account joins the channel first if it is not a member, and that waiting can take up to 30 seconds (10 s to join, 20 s for ready).
 2. WHILE a summon request is pending, THE page SHALL show progress and disable the submit button; WHEN the result says `ready: false`, THE page SHALL say the agent is still starting and will appear when ready.
 3. THE page SHALL offer an "Exorcise" button per agent that opens a confirmation dialog naming the agent and channel and stating that uncommitted work in the worktree is reverted.
 4. WHEN the user confirms, THE page SHALL call `POST /api/exorcise` with `confirm: true`; WHEN the user cancels, THE page SHALL send nothing.
@@ -71,7 +71,7 @@ One Kiro Crew dashboard page (`/apps/seance-crew`) shows the Séance channels th
 
 #### Acceptance Criteria
 
-1. THE backend SHALL implement `GET /api/state`, `GET /api/summary`, `POST /api/summon`, `POST /api/grant-op`, `POST /api/exorcise` and `POST /api/inbox/dismiss`, and `app.json` `permissions.api` SHALL list exactly these paths.
+1. THE backend SHALL implement `GET /api/state`, `GET /api/summary`, `POST /api/summon`, `POST /api/grant-op`, `POST /api/exorcise` and `POST /api/inbox/dismiss`, and `app.json` `permissions.api` SHALL list exactly these paths with the `/apps/seance-crew` proxy prefix (for example `/apps/seance-crew/api/state`).
 2. THE backend SHALL answer JSON with `Cache-Control: no-store`, accept only `application/json` bodies up to 16 KiB on POST, and answer HTTP 405 for other methods and 404 for unknown `/api/*` paths.
 3. THE backend SHALL apply the shared local-caller guard (`mcp-tools` Requirement 8) to every `/api/*` request: a `Host` that is not `127.0.0.1:<port>` or `localhost:<port>` SHALL get HTTP 421, and an `Origin` that is not the gateway origin SHALL get HTTP 403.
 4. THE backend SHALL require the gateway proxy header on every `/api/*` request: it SHALL verify `X-KiroCrew-Proxy: <timestamp>:<hmac-sha256>` using `KIROCREW_PROXY_SECRET` with the scheme recorded in `.kiro/steering/kirocrew.md` (HMAC over `timestamp:method:target:sha256(body)`, ±60 second window, constant-time compare); a missing, malformed, expired or wrong signature SHALL get HTTP 403 `invalid_proxy_signature`, and an unset `KIROCREW_PROXY_SECRET` SHALL get HTTP 503 `proxy_secret_missing` (fail closed).
@@ -90,7 +90,7 @@ One Kiro Crew dashboard page (`/apps/seance-crew`) shows the Séance channels th
 
 1. THE page SHALL be fully operable with the keyboard, with visible focus, and confirmation dialogs SHALL trap focus, close on Escape, and return focus to the trigger.
 2. THE page SHALL use semantic headings, labelled form fields, and buttons with accessible names that include the agent and channel.
-3. THE page SHALL NOT use color as the only way to show state.
+3. THE page SHALL NOT use color as the only way to show state, and all text (hints, status banner, labels) SHALL have a contrast ratio of at least 4.5:1 against its background: text colours come from the host variables `--card-fg` and `--muted-fg` and fall back to the inherited colour, never to a fixed dark colour.
 4. THE page SHALL use the `@kirocrew/app-sdk` UI components and Crew theme tokens where available, and SHALL NOT bundle React, `@kirocrew/app-sdk` or `lucide-react`.
 5. THE page SHALL not contain the trademarked name forbidden by `.kiro/steering/security.md`.
 

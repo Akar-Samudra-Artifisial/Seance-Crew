@@ -52,7 +52,7 @@ interface State {
 - `lines` come from the irc-bridge ring buffers (newest 200 per channel). `buildState` serializes, and while the byte length exceeds 256 KiB it removes the oldest line from the channel that currently holds the most lines, then sets `truncated: true`. `?since=` still returns the full capped state when the revision changed.
 - `/api/summary` returns `{ summary }` from the in-backend summary service (`steward-agent`).
 - Errors: `{ error: { code, message } }`; 400 validation/`confirm_required`, 403 `bad_origin`/`invalid_proxy_signature`, 404, 405, 409 `not_registered`, 413, 421 `bad_host`, 422, 502, 503 `proxy_secret_missing`.
-- `permissions.api` lists `/api/state`, `/api/summary`, `/api/summon`, `/api/grant-op`, `/api/exorcise`, `/api/inbox/dismiss`. Adding a route requires adding it there, and a test compares the two lists.
+- `useAppApi()` does not proxy automatically and adds no prefix: it checks the path against `permissions.api` (the pathname is matched, so `?since=` passes) and calls `fetch` with it as is. The page therefore requests the full proxy path `/apps/seance-crew/api/<route>`, built from one constant (`API_BASE` in `ui/src/api.ts`), and `permissions.api` lists the six full paths: `/apps/seance-crew/api/state`, `/apps/seance-crew/api/summary`, `/apps/seance-crew/api/summon`, `/apps/seance-crew/api/grant-op`, `/apps/seance-crew/api/exorcise`, `/apps/seance-crew/api/inbox/dismiss` (explicit list, no wildcard). The backend itself still sees `/api/<route>`. Adding a route requires adding it there, and tests compare the lists.
 
 ### UI structure
 
@@ -110,7 +110,7 @@ The page makes no destructive call unless the user confirmed in the dialog.
 
 ### Property 4: Permissions match the routes
 
-`permissions.api` in `app.json` equals the set of implemented `/api/*` routes.
+`permissions.api` in `app.json` equals the set of implemented `/api/*` routes, each with the `/apps/seance-crew` proxy prefix.
 
 **Validates: Requirements 5.1**
 

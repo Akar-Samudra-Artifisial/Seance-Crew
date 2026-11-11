@@ -1,5 +1,6 @@
 // Wires paths, lock, config, bridge and HTTP together. server.ts is the thin process entry around this.
 import type http from "node:http";
+import { createApiRoute } from "./api/routes.js";
 import type { Clock } from "./clock.js";
 import { loadConfig, type FetchLike } from "./config.js";
 import { createConfigWatcher, type ConfigWatcher } from "./config-watch.js";
@@ -70,7 +71,18 @@ export async function startApp(deps: AppDeps): Promise<RunningApp> {
   let listenPort = 0;
   const registry = createToolRegistry({ store, bridge, clock, logger, ...(deps.summary === undefined ? {} : { summary: deps.summary }) });
   const mcpRoute = createMcpRoute({ port: () => listenPort, gatewayOrigin: deps.env["KIROCREW_GATEWAY_ORIGIN"], registry, logger });
-  const server = createHttpServer({ logger, routes: [mcpRoute, ...(deps.routes ?? [])] });
+  // /api/* shares the registry (and so the rate limits and channel locks) with /mcp; it is closed without a proxy secret.
+  const apiRoute = createApiRoute({
+    port: () => listenPort,
+    gatewayOrigin: deps.env["KIROCREW_GATEWAY_ORIGIN"],
+    proxySecret: () => deps.env["KIROCREW_PROXY_SECRET"],
+    store,
+    bridge,
+    registry,
+    now: () => clock.now(),
+    ...(deps.summary === undefined ? {} : { summary: deps.summary }),
+  });
+  const server = createHttpServer({ logger, routes: [mcpRoute, apiRoute, ...(deps.routes ?? [])] });
   let port: number;
   try {
     port = await listen(server, deps.port);

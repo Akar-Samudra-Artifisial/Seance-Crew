@@ -1,0 +1,38 @@
+{
+  "secret": "test-proxy-secret-not-real",
+  "ts": 1700000000,
+  "vectors": [
+    {
+      "name": "get-with-query",
+      "method": "GET",
+      "target": "/api/state?since=3",
+      "body": "",
+      "bodySha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "header": "1700000000:c06d12c08b6c033731e1cb665cf2d4477e46d321dcaff02c6b97550cd7b0e6f9"
+    },
+    {
+      "name": "post-with-body",
+      "method": "POST",
+      "target": "/api/summon",
+      "body": "{\"channel\":\"#fix-bug\",\"agent\":\"coder\"}",
+      "bodySha256": "9c16211cce20e2682cf2760b2b6396cabba6af23085d58218cf8007210975aec",
+      "header": "1700000000:f097e8c11d8b642e5595ca02cb38cfe9bf98669b125300b0e712455bff9e38e9"
+    },
+    {
+      "name": "empty-body",
+      "method": "GET",
+      "target": "/api/summary",
+      "body": "",
+      "bodySha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "header": "1700000000:189f878b50fc60930914f4c42bfad2578a4f80d9a10ef1f811676a349b61e21b"
+    },
+    {
+      "name": "percent-encoded-query",
+      "method": "GET",
+      "target": "/api/state?since=3&note=a%20b%2Bc%C3%A9",
+      "body": "",
+      "bodySha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "header": "1700000000:4d28dffb2ec06d6468c65f72d2b157670006ce9e2d5e6b027ea0280eaa03540f"
+    }
+  ]
+}

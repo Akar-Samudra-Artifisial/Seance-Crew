@@ -41,7 +41,7 @@ The gateway starts the backend from `~/.kiro/crew/apps/seance-crew`, but do not 
 
 Read from the installed source (`~/.kiro/crew-venv/lib/python3.12/site-packages/kiro_crew/apps/`, Kiro Crew 0.12.1). Line numbers are for that version.
 
-- The UI calls the backend through `useAppApi()`, reverse-proxied at `/apps/seance-crew/api/*` (`routes_proxy.py`). Every path the UI calls must be in `permissions.api`. Without a signed-in dashboard session the proxy answers 403 "Sign in required".
+- The UI calls the backend through `useAppApi()`, which adds **no prefix**: the SDK only checks the path against `permissions.api` (a prefix match on the pathname, so an entry `X` allows `X` and `X/...`; a query string such as `?since=3` passes) and then passes it to `fetch` as is. A path not in the list throws an `AppApiError` synchronously, before any request. `get("/api/state")` therefore hits the gateway's own `/api/state` and gets 404. The app backend is reached only at the reverse-proxy path `/apps/seance-crew/api/<route>` (`routes_proxy.py`), so the UI must call the full path and `permissions.api` must list the full paths (`/apps/seance-crew/api/state`, and so on, no wildcard). Without a signed-in dashboard session the proxy answers 403 "Sign in required".
 - The gateway forwards to `http://127.0.0.1:<port>` (`routes_proxy.py:187`), so a proxied request has `Host: 127.0.0.1:<port>`. The forwarded target is `/api/<path>` plus the raw query, with the gateway's own `token` query parameter removed first (`routes_proxy.py:157`, `:_PROXY_STRIP_QUERY_PARAMS`).
 - Signing scheme v1 (`routes_proxy.py:357-361`, verifier `proxy_auth.py:102-135`):
   - header `X-KiroCrew-Proxy: <ts>:<sig>`, `ts` = integer Unix seconds;
