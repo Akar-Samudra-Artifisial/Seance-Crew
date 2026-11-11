@@ -18,7 +18,10 @@ Séance Crew is a Kiro Crew app: a single Node backend that connects to a Séanc
 pnpm install
 pnpm typecheck && pnpm lint && pnpm test
 pnpm build
-pnpm e2e            # skipped unless SEANCE_E2E=1
+pnpm check:dist     # rebuilds and fails if backend/dist differs from what is committed
+pnpm e2e            # skipped unless SEANCE_E2E=1 (raw WebSocket phase, then the built bundle phase)
+                    # env: SEANCE_E2E_HOST/NICK/SECRET; the bundle phase also needs a SECOND account in
+                    # SEANCE_E2E_ANCHOR_NICK/SECRET (one session per account) or it is skipped with a message
 kirocrew app dev seance-crew
 ```
 

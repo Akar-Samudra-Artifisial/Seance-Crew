@@ -62,6 +62,17 @@ pnpm e2e            # prints "skipped" unless SEANCE_E2E=1
 kirocrew app dev seance-crew
 ```
 
+The opt-in end-to-end check talks to a real Séance server and needs two accounts, because the server allows one session per account:
+
+```sh
+SEANCE_E2E=1 \
+SEANCE_E2E_HOST=<host> SEANCE_E2E_NICK=<nick> SEANCE_E2E_SECRET=<secret> \
+SEANCE_E2E_ANCHOR_NICK=<other-nick> SEANCE_E2E_ANCHOR_SECRET=<other-secret> \
+pnpm e2e
+```
+
+Phase 1 (raw WebSocket) uses the first account. Phase 2 runs the built `backend/dist/server.js` as the first account while the second account (the anchor) sits in a fresh `#crew<n>` channel, so the bundle's LIST finds a channel. Without the two `ANCHOR` variables phase 2 is skipped with a message; the anchor nick must differ from `SEANCE_E2E_NICK`. Run `pnpm build` first. `SEANCE_E2E_ONLY=ws` or `bundle` runs one phase. Secrets are never printed.
+
 - `backend/dist/server.js` and `ui/dist/index.mjs` are build artifacts that are committed, because Crew installs exclude `node_modules`.
 - `@kirocrew/app-sdk` is not on npm. It stays a peer dependency of the UI, and installs outside pnpm need `npm install --legacy-peer-deps`.
 - Specs: `.kiro/specs/{irc-bridge,mcp-tools,dashboard-ui,steward-agent,demo-writeup}/`.
