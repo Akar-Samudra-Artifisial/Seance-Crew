@@ -4,6 +4,7 @@ import { CHANNEL_PLACEHOLDERS, Dashboard, IDLE_ACTIONS } from "../src/Dashboard.
 import { ChannelCard, lastActivity } from "../src/ChannelCard.js";
 import { formatAge, formatAgo, formatCredits, formatUsage, modeChangesFor, modeLabel } from "../src/format.js";
 import { confirmCopy, type ConfirmRequest } from "../src/confirmFlow.js";
+import { TILES_CSS, TILES_NARROW_PX, TILES_WIDE_PX } from "../src/styles.js";
 import { ICON_NAMES, Icon } from "../src/Icon.js";
 import { overviewStats, TILE_COUNT } from "../src/StatTiles.js";
 import { Button, EmptyState, Meter, Pill } from "../src/ui.js";
@@ -505,12 +506,30 @@ describe("layout details", () => {
     expect(out).toContain('<section aria-labelledby="inbox-heading"');
   });
 
-  it("groups the six tiles as 3 + 3 so a narrow row wraps evenly and a wide row holds all six", () => {
+  it("picks the tile columns from the container width: 6 when wide, 3 + 3 under 900 px, 2 under 500 px", () => {
     const out = renderToStaticMarkup(<Dashboard state={state()} summary={null} status={null} />);
     const overview = out.slice(out.indexOf('aria-label="Overview"'), out.indexOf("</section>", out.indexOf('aria-label="Overview"')));
-    expect(overview.match(/flex:1 1 23rem/g)).toHaveLength(2);
-    expect(overview).toContain("min(100%, 7rem)");
+    // The section is the size container; the six tiles are direct children of one grid whose columns come from the CSS.
+    expect(overview).toContain("container-type:inline-size");
+    expect(overview).toContain("data-seance-tiles");
     expect(overview.match(/<div style="[^"]*"><span style="/g)).toHaveLength(6);
+    expect(overview).not.toContain("grid-template-columns"); // inline columns would beat the container query
+    expect(TILES_WIDE_PX).toBe(900);
+    expect(TILES_NARROW_PX).toBe(500);
+    expect(TILES_CSS).toContain("[data-seance-tiles]{grid-template-columns:repeat(6,minmax(0,1fr))}");
+    expect(TILES_CSS).toContain("@container (max-width:899px){[data-seance-tiles]{grid-template-columns:repeat(3,minmax(0,1fr))}}");
+    expect(TILES_CSS).toContain("@container (max-width:499px){[data-seance-tiles]{grid-template-columns:repeat(2,minmax(0,1fr))}}");
+    // The narrower rule comes last so it wins below 500 px.
+    expect(TILES_CSS.indexOf("max-width:499px")).toBeGreaterThan(TILES_CSS.indexOf("max-width:899px"));
+    // The page renders the rule once, in its scoped <style>.
+    expect(out.split(TILES_CSS).length - 1).toBe(1);
+  });
+
+  it("shows the same grid while loading", () => {
+    const out = renderToStaticMarkup(<Dashboard state={null} summary={undefined} status={null} />);
+    const overview = out.slice(out.indexOf('aria-label="Overview"'), out.indexOf("</section>", out.indexOf('aria-label="Overview"')));
+    expect(overview).toContain("container-type:inline-size");
+    expect(overview).toContain("data-seance-tiles");
   });
 
   it("opens the recent log by default", () => {

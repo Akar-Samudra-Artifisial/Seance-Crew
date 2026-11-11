@@ -86,8 +86,8 @@ App
 ```
 PageHeader "Séance Crew"
 StatusBanner      slim line when registered (icon · Connected · host as nick · updated 5 s ago), full banner otherwise
-StatTiles         <section aria-label="Overview">: two groups of three (flex 1 1 23rem each), each group a grid
-                  repeat(auto-fit, minmax(min(100%, 7rem), 1fr)); wide = 6 in a row, narrow = 3 + 3
+StatTiles         <section aria-label="Overview"> is a size container (container-type: inline-size); one grid of six
+                  tiles inside it, columns from TILES_CSS: 6 from 900 px, 3 under 900 px, 2 under 500 px (container width)
 columns           flex, wrap, gap 1rem
  ├─ main  (flex 999 1 34rem)   Panel > SectionHeader "Channels" (h2#channels-heading, tabIndex -1) + ChannelCard[]
  └─ aside (flex 1 1 20rem)     Inbox (Needs op) → SummonForm → SummaryCard

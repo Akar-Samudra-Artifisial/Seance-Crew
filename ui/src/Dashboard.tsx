@@ -10,7 +10,7 @@ import { LiveRegion } from "./LiveRegion.js";
 import { NO_NOTICE, type Notice } from "./notice.js";
 import { StatTiles } from "./StatTiles.js";
 import { StatusBanner } from "./StatusBanner.js";
-import { FOCUS_CSS, SCOPE_ATTR, styles } from "./styles.js";
+import { FOCUS_CSS, SCOPE_ATTR, styles, TILES_CSS } from "./styles.js";
 import { SummaryCard } from "./SummaryCard.js";
 import { SummonForm, type SummonMessage } from "./SummonForm.js";
 import type { AgentView, InboxView, PollStatus, State, Summary } from "./types.js";
@@ -77,7 +77,7 @@ export function Dashboard({ state, summary, status, actions = IDLE_ACTIONS, anno
   const grantingId = inFlight?.kind === "grant" ? (inFlight.inboxId ?? null) : null;
   return (
     <div {...{ [SCOPE_ATTR]: "" }}>
-      <style>{FOCUS_CSS}</style>
+      <style>{FOCUS_CSS + TILES_CSS}</style>
       <PageHeader title="Séance Crew" subtitle="Channels, agents, credits and permission requests." />
       <main style={styles.page}>
         <LiveRegion announcement={announcement} notice={notice} />

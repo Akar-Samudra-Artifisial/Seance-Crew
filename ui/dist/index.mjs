@@ -295,6 +295,10 @@ var toneColor = {
 };
 var SCOPE_ATTR = "data-seance";
 var FOCUS_CSS = `[${SCOPE_ATTR}] :is(button,a,input,select,textarea,summary,[tabindex]):focus-visible{outline:2px solid ${color.accent};outline-offset:2px}`;
+var TILES_ATTR = "data-seance-tiles";
+var TILES_WIDE_PX = 900;
+var TILES_NARROW_PX = 500;
+var TILES_CSS = `[${TILES_ATTR}]{grid-template-columns:repeat(6,minmax(0,1fr))}@container (max-width:${TILES_WIDE_PX - 1}px){[${TILES_ATTR}]{grid-template-columns:repeat(3,minmax(0,1fr))}}@container (max-width:${TILES_NARROW_PX - 1}px){[${TILES_ATTR}]{grid-template-columns:repeat(2,minmax(0,1fr))}}`;
 var buttonBase = {
   font: "inherit",
   fontSize: fontSize.small,
@@ -353,10 +357,9 @@ var styles = {
   },
   panel: { background: color.card, color: color.cardFg, border: `1px solid ${color.border}`, borderRadius: radius.panel, padding: space.lg, minWidth: 0, display: "flex", flexDirection: "column", gap: space.md },
   sectionHeader: { display: "flex", alignItems: "center", gap: space.sm, flexWrap: "wrap" },
-  // Two groups of three tiles. Side by side when the row is wide (6 in one row); stacked when narrow (3 + 3). Inside a
-  // group the tiles fit as many as the width allows (3, then 2, then 1).
-  statGrid: { display: "flex", flexWrap: "wrap", gap: space.md },
-  statGroup: { flex: "1 1 23rem", minWidth: 0, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 7rem), 1fr))", gap: space.md },
+  // The overview row: the section is a size container and TILES_CSS picks the columns from ITS width (not the window's).
+  statBox: { containerType: "inline-size" },
+  statGrid: { display: "grid", gap: space.md },
   statTile: { gap: space.xs, padding: `${space.md} ${space.lg}` },
   statusText: { display: "flex", alignItems: "center", flexWrap: "wrap", gap: space.sm, margin: 0 },
   inboxItem: { display: "flex", flexDirection: "column", gap: space.sm, padding: space.md, border: `1px solid ${color.border}`, borderRadius: radius.control },
@@ -679,22 +682,19 @@ function overviewStats(state) {
 }
 var TILE_COUNT = 6;
 function StatTiles({ state }) {
+  const grid = { [TILES_ATTR]: "" };
   if (state === null) {
-    return /* @__PURE__ */ jsx6("section", { "aria-label": "Overview", style: styles.statGrid, children: [0, 1].map((group) => /* @__PURE__ */ jsx6("div", { style: styles.statGroup, children: Array.from({ length: TILE_COUNT / 2 }, (_, i) => /* @__PURE__ */ jsx6(Skeleton, { height: "4.5rem" }, i)) }, group)) });
+    return /* @__PURE__ */ jsx6("section", { "aria-label": "Overview", style: styles.statBox, children: /* @__PURE__ */ jsx6("div", { ...grid, style: styles.statGrid, children: Array.from({ length: TILE_COUNT }, (_, i) => /* @__PURE__ */ jsx6(Skeleton, { height: "4.5rem" }, i)) }) });
   }
   const o = overviewStats(state);
-  return /* @__PURE__ */ jsxs5("section", { "aria-label": "Overview", style: styles.statGrid, children: [
-    /* @__PURE__ */ jsxs5("div", { style: styles.statGroup, children: [
-      /* @__PURE__ */ jsx6(StatTile, { icon: "hash", label: "Channels", value: o.channels }),
-      /* @__PURE__ */ jsx6(StatTile, { icon: "bot", label: "Agents ready", value: `${o.agentsReady} / ${o.agentsTotal}` }),
-      /* @__PURE__ */ jsx6(StatTile, { icon: "shield-check", label: "Operators", value: o.operators })
-    ] }),
-    /* @__PURE__ */ jsxs5("div", { style: styles.statGroup, children: [
-      /* @__PURE__ */ jsx6(StatTile, { icon: "shield", label: "Needs op", value: o.needsOp, tone: o.needsOp > 0 ? "warn" : "neutral" }),
-      /* @__PURE__ */ jsx6(StatTile, { icon: "coins", label: "Total credits", value: formatCredits(o.totalCredits) }),
-      /* @__PURE__ */ jsx6(StatTile, { icon: "git-commit", label: "Commits", value: o.commits })
-    ] })
-  ] });
+  return /* @__PURE__ */ jsx6("section", { "aria-label": "Overview", style: styles.statBox, children: /* @__PURE__ */ jsxs5("div", { ...grid, style: styles.statGrid, children: [
+    /* @__PURE__ */ jsx6(StatTile, { icon: "hash", label: "Channels", value: o.channels }),
+    /* @__PURE__ */ jsx6(StatTile, { icon: "bot", label: "Agents ready", value: `${o.agentsReady} / ${o.agentsTotal}` }),
+    /* @__PURE__ */ jsx6(StatTile, { icon: "shield-check", label: "Operators", value: o.operators }),
+    /* @__PURE__ */ jsx6(StatTile, { icon: "shield", label: "Needs op", value: o.needsOp, tone: o.needsOp > 0 ? "warn" : "neutral" }),
+    /* @__PURE__ */ jsx6(StatTile, { icon: "coins", label: "Total credits", value: formatCredits(o.totalCredits) }),
+    /* @__PURE__ */ jsx6(StatTile, { icon: "git-commit", label: "Commits", value: o.commits })
+  ] }) });
 }
 
 // ui/src/ChannelCard.tsx
@@ -1135,7 +1135,7 @@ function Dashboard({ state, summary, status, actions = IDLE_ACTIONS, announcemen
   const inFlight = dialog.phase === "submitting" ? dialog.request : null;
   const grantingId = inFlight?.kind === "grant" ? inFlight.inboxId ?? null : null;
   return /* @__PURE__ */ jsxs13("div", { ...{ [SCOPE_ATTR]: "" }, children: [
-    /* @__PURE__ */ jsx14("style", { children: FOCUS_CSS }),
+    /* @__PURE__ */ jsx14("style", { children: FOCUS_CSS + TILES_CSS }),
     /* @__PURE__ */ jsx14(PageHeader, { title: "S\xE9ance Crew", subtitle: "Channels, agents, credits and permission requests." }),
     /* @__PURE__ */ jsxs13("main", { style: styles.page, children: [
       /* @__PURE__ */ jsx14(LiveRegion, { announcement, notice }),

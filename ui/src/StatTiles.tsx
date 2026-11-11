@@ -1,5 +1,5 @@
 import { formatCredits } from "./format.js";
-import { styles } from "./styles.js";
+import { styles, TILES_ATTR } from "./styles.js";
 import type { ChannelView, State } from "./types.js";
 import { Skeleton, StatTile } from "./ui.js";
 
@@ -35,28 +35,25 @@ export const TILE_COUNT = 6;
 
 /** The overview row. While the first state loads it shows six placeholder tiles. */
 export function StatTiles({ state }: { readonly state: State | null }) {
+  const grid = { [TILES_ATTR]: "" };
   if (state === null) {
     return (
-      <section aria-label="Overview" style={styles.statGrid}>
-        {[0, 1].map((group) => (
-          <div key={group} style={styles.statGroup}>
-            {Array.from({ length: TILE_COUNT / 2 }, (_, i) => (
-              <Skeleton key={i} height="4.5rem" />
-            ))}
-          </div>
-        ))}
+      <section aria-label="Overview" style={styles.statBox}>
+        <div {...grid} style={styles.statGrid}>
+          {Array.from({ length: TILE_COUNT }, (_, i) => (
+            <Skeleton key={i} height="4.5rem" />
+          ))}
+        </div>
       </section>
     );
   }
   const o = overviewStats(state);
   return (
-    <section aria-label="Overview" style={styles.statGrid}>
-      <div style={styles.statGroup}>
+    <section aria-label="Overview" style={styles.statBox}>
+      <div {...grid} style={styles.statGrid}>
         <StatTile icon="hash" label="Channels" value={o.channels} />
         <StatTile icon="bot" label="Agents ready" value={`${o.agentsReady} / ${o.agentsTotal}`} />
         <StatTile icon="shield-check" label="Operators" value={o.operators} />
-      </div>
-      <div style={styles.statGroup}>
         <StatTile icon="shield" label="Needs op" value={o.needsOp} tone={o.needsOp > 0 ? "warn" : "neutral"} />
         <StatTile icon="coins" label="Total credits" value={formatCredits(o.totalCredits)} />
         <StatTile icon="git-commit" label="Commits" value={o.commits} />

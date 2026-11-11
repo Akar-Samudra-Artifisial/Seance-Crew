@@ -70,6 +70,22 @@ export const SCOPE_ATTR = "data-seance";
 /** Visible focus ring for every interactive element of the page, keyboard focus only. */
 export const FOCUS_CSS = `[${SCOPE_ATTR}] :is(button,a,input,select,textarea,summary,[tabindex]):focus-visible{outline:2px solid ${color.accent};outline-offset:2px}`;
 
+/** Attribute of the tile grid; TILES_CSS selects on it. */
+export const TILES_ATTR = "data-seance-tiles";
+/** Container widths (px) where the tile grid changes: 6 columns from TILES_WIDE_PX up, 3 below it, 2 below TILES_NARROW_PX. */
+export const TILES_WIDE_PX = 900;
+export const TILES_NARROW_PX = 500;
+
+/**
+ * Columns of the overview tiles from the width of their container (a container query, so the host's sidebar does not
+ * matter): six in one row when wide, 3 + 3 under 900 px, three rows of two under 500 px. Inline styles cannot express a
+ * query, so this is the second scoped rule next to FOCUS_CSS, rendered once by the page.
+ */
+export const TILES_CSS =
+  `[${TILES_ATTR}]{grid-template-columns:repeat(6,minmax(0,1fr))}` +
+  `@container (max-width:${TILES_WIDE_PX - 1}px){[${TILES_ATTR}]{grid-template-columns:repeat(3,minmax(0,1fr))}}` +
+  `@container (max-width:${TILES_NARROW_PX - 1}px){[${TILES_ATTR}]{grid-template-columns:repeat(2,minmax(0,1fr))}}`;
+
 // ---- styles ------------------------------------------------------------------------------------
 
 export type ButtonVariant = "primary" | "secondary" | "danger" | "ghost";
@@ -136,10 +152,9 @@ export const styles = {
   } satisfies CSSProperties,
   panel: { background: color.card, color: color.cardFg, border: `1px solid ${color.border}`, borderRadius: radius.panel, padding: space.lg, minWidth: 0, display: "flex", flexDirection: "column", gap: space.md } satisfies CSSProperties,
   sectionHeader: { display: "flex", alignItems: "center", gap: space.sm, flexWrap: "wrap" } satisfies CSSProperties,
-  // Two groups of three tiles. Side by side when the row is wide (6 in one row); stacked when narrow (3 + 3). Inside a
-  // group the tiles fit as many as the width allows (3, then 2, then 1).
-  statGrid: { display: "flex", flexWrap: "wrap", gap: space.md } satisfies CSSProperties,
-  statGroup: { flex: "1 1 23rem", minWidth: 0, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 7rem), 1fr))", gap: space.md } satisfies CSSProperties,
+  // The overview row: the section is a size container and TILES_CSS picks the columns from ITS width (not the window's).
+  statBox: { containerType: "inline-size" } satisfies CSSProperties,
+  statGrid: { display: "grid", gap: space.md } satisfies CSSProperties,
   statTile: { gap: space.xs, padding: `${space.md} ${space.lg}` } satisfies CSSProperties,
   statusText: { display: "flex", alignItems: "center", flexWrap: "wrap", gap: space.sm, margin: 0 } satisfies CSSProperties,
   inboxItem: { display: "flex", flexDirection: "column", gap: space.sm, padding: space.md, border: `1px solid ${color.border}`, borderRadius: radius.control } satisfies CSSProperties,
