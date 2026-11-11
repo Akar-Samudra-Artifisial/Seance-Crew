@@ -90,7 +90,7 @@ describe("WHOIS", () => {
     expect(store.channel("#dev")?.credits).toEqual({ used: 0.1, total: 0.25, source: "whois" });
     expect(events.some((e) => e.type === "agent")).toBe(true);
     expect(events.some((e) => e.type === "credits")).toBe(true);
-    expect(store.totalCredits()).toBe(0.25);
+    expect(store.totalCredits()).toBe(0.1); // the sum of the per-channel rows
   });
 
   it("does not mark a human as an agent", () => {
@@ -135,6 +135,22 @@ describe("notices", () => {
     expect(store.channel("#dev")?.credits).toMatchObject({ used: 0.5, source: "whois" });
   });
 
+  it("lets a stale WHOIS figure be raised by a higher reverted notice, never lowered, and recomputes the total", () => {
+    const { store, feed } = world();
+    store.setCreditsFromWhois("#dev", 0.06, 2.31);
+    feed(`:${CS} NOTICE #dev :0 files reverted · 0.14 credits used`);
+    expect(store.channel("#dev")?.credits).toMatchObject({ used: 0.14, total: 2.31, source: "whois" });
+    expect(store.totalCredits()).toBe(0.14);
+    feed(`:${CS} NOTICE #dev :0 files reverted · 0.10 credits used`);
+    expect(store.channel("#dev")?.credits.used).toBe(0.14);
+  });
+
+  it("strips IRC formatting codes before storing a line", () => {
+    const { store, feed } = world();
+    feed(`:coder!c@h PRIVMSG #dev :\x0312I couldn't\x0f \x02write\x02 \x0304,01that`);
+    expect(store.channel("#dev")!.ring.newest(1)[0]).toMatchObject({ from: "coder", text: "I couldn't write that" });
+  });
+
   it("stores a notice from a user as a plain line without typed events", () => {
     const { store, feed, events } = world();
     feed(`:mallory!m@evil NOTICE #dev :coder committed deadbee (2 file(s))`);
@@ -163,6 +179,54 @@ describe("Property 6: only needs-op creates inbox items", () => {
     expect(open).toHaveLength(1);
     expect(open[0]).toMatchObject({ channel: "#dev", agent: "coder", action: "Run npm test", status: "open", candidates: [] });
     expect(events.filter((e) => e.type === "needs-op")).toHaveLength(1);
+  });
+
+  describe("a denial sent as a channel NOTICE from the agent", () => {
+    const agent = { nick: "coder", model: "m", tools: [], totalCredits: null };
+    const AG = "coder!coder@seance.local";
+
+    it("opens an item for a known agent that is in the channel", () => {
+      const { store, feed } = world();
+      store.setAgent(agent);
+      feed(`:${AG} NOTICE #dev :ops: coder denied Creating NOTES.md: needs-op`);
+      expect(store.openInbox()).toHaveLength(1);
+      expect(store.openInbox()[0]).toMatchObject({ channel: "#dev", agent: "coder", action: "Creating NOTES.md", candidates: [] });
+    });
+
+    it("uses the channel the notice arrived in, even when the agent is in several", () => {
+      const { store, feed } = world();
+      store.setAgent(agent);
+      feed(`:${AG} NOTICE #ops :ops: coder denied Edit: needs-op`);
+      expect(store.openInbox()[0]).toMatchObject({ channel: "#ops", candidates: [] });
+    });
+
+    it("ignores it when the sender is not the agent named in the text", () => {
+      const { store, feed } = world();
+      store.setAgent(agent);
+      feed(`:mallory!m@evil NOTICE #dev :ops: coder denied Edit: needs-op`);
+      expect(store.inbox()).toHaveLength(0);
+    });
+
+    it("ignores it when the sender names itself but is not a known agent", () => {
+      const { store, feed } = world();
+      feed(`:alice!a@h NOTICE #dev :ops: alice denied Edit: needs-op`);
+      feed(`:${AG} NOTICE #dev :ops: coder denied Edit: needs-op`); // coder is not known as an agent here
+      expect(store.inbox()).toHaveLength(0);
+    });
+
+    it("ignores it when the agent is not a member of that channel", () => {
+      const { store, feed } = world();
+      store.setAgent(agent);
+      feed(`:${AG} NOTICE #other :ops: coder denied Edit: needs-op`);
+      expect(store.inbox()).toHaveLength(0);
+    });
+
+    it("keeps the text as an untrusted channel line", () => {
+      const { store, feed } = world();
+      store.setAgent(agent);
+      feed(`:${AG} NOTICE #dev :ops: coder denied Edit: needs-op`);
+      expect(store.channel("#dev")!.ring.newest(1)[0]).toMatchObject({ from: "coder", kind: "notice" });
+    });
   });
 
   it("de-duplicates the same (agent, action) within 60 seconds only", () => {

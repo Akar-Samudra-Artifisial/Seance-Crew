@@ -1100,6 +1100,12 @@ function createCreditsSnapshot({ store, paths, clock, logger: logger2 }) {
   };
 }
 
+// backend/src/irc/format.ts
+var FORMATTING = /\x03(?:\d{1,2}(?:,\d{1,2})?)?|\x04(?:[0-9a-fA-F]{6}(?:,[0-9a-fA-F]{6})?)?|[\x02\x1d\x1f\x1e\x11\x16\x0f]/g;
+function stripFormatting(text) {
+  return text.replace(FORMATTING, "");
+}
+
 // backend/src/irc/notices.ts
 var DENIED_REASONS = [
   "no-mode",
@@ -1126,7 +1132,13 @@ function parseNotice(input, ownNick) {
   const { prefix, target, text } = input;
   if (prefix === void 0 || prefix === "") return null;
   if (isValidChannel(target)) {
-    if (!isServiceNick(nickOf(prefix))) return null;
+    const sender = nickOf(prefix);
+    if (!isServiceNick(sender)) {
+      const d = prefix.includes("!") ? DENIED.exec(text) : null;
+      if (d === null || irc_lower(d[1]) !== irc_lower(sender)) return null;
+      const why = d[3];
+      return d[4] === void 0 ? { kind: "denied", agent: sender, action: d[2], reason: why, channel: target } : { kind: "denied", agent: sender, action: d[2], reason: why, detail: d[4], channel: target };
+    }
     let m2 = WORKTREE.exec(text);
     if (m2 !== null) return { kind: "worktree", dir: m2[1], sha: m2[2] };
     m2 = CLOSED.exec(text);
@@ -1265,8 +1277,16 @@ function createDispatcher(store, hooks = {}, logger2) {
     }
     return { channel: null, candidates: [] };
   };
-  const onDenied = (agent, action, reason, detail) => {
-    const { channel: channel2, candidates } = resolveDenial(agent);
+  const onDenied = (agent, action, reason, detail, fromChannel) => {
+    let resolved;
+    if (fromChannel !== void 0) {
+      const known = store.channel(fromChannel);
+      if (known === void 0 || !store.isAgent(agent) || !known.members.has(irc_lower(agent))) return;
+      resolved = { channel: known.name, candidates: [] };
+    } else {
+      resolved = resolveDenial(agent);
+    }
+    const { channel: channel2, candidates } = resolved;
     if (reason === "needs-op") {
       store.addNeedsOp(agent, action, channel2, candidates);
       return;
@@ -1277,7 +1297,7 @@ function createDispatcher(store, hooks = {}, logger2) {
   };
   const onNotice = (message) => {
     const target = message.params[0] ?? "";
-    const text = message.params[1] ?? "";
+    const text = stripFormatting(message.params[1] ?? "");
     const from = nickOfPrefix(message.prefix);
     const toChannel = isValidChannel(target);
     if (toChannel && !admit(target)) return;
@@ -1319,7 +1339,7 @@ function createDispatcher(store, hooks = {}, logger2) {
         break;
       }
       case "denied":
-        onDenied(parsed.agent, parsed.action, parsed.reason, parsed.detail);
+        onDenied(parsed.agent, parsed.action, parsed.reason, parsed.detail, parsed.channel);
         break;
     }
   };
@@ -1503,7 +1523,7 @@ function createDispatcher(store, hooks = {}, logger2) {
         break;
       case "PRIVMSG": {
         const target = p[0] ?? "";
-        if (isValidChannel(target) && admit(target)) store.addLine(target, nickOfPrefix(message.prefix) || "server", "privmsg", p[1] ?? "");
+        if (isValidChannel(target) && admit(target)) store.addLine(target, nickOfPrefix(message.prefix) || "server", "privmsg", stripFormatting(p[1] ?? ""));
         break;
       }
       case "NOTICE":
@@ -1892,7 +1912,8 @@ var Store = class {
   addLine(channelName, from, kind, text) {
     const channel2 = this.ensureChannel(channelName);
     const ts = this.clock.now();
-    const line = channel2.ring.push((seq) => ({ seq, ts, from, kind, text }));
+    const clean = stripFormatting(text);
+    const line = channel2.ring.push((seq) => ({ seq, ts, from, kind, text: clean }));
     this.emit({ type: "line", channel: channel2.name, line });
     return line;
   }
@@ -1968,18 +1989,26 @@ var Store = class {
     if (!known) channel2.leftAt = this.clock.now();
     this.bump();
   }
+  /**
+   * The "credits used" figure of a revert notice. WHOIS is authoritative while the agent is present, but after an
+   * exorcise the last WHOIS is stale, so a higher notice figure wins. Credits never go down because of a notice.
+   */
   setCreditsFromNotice(channel2, used) {
-    if (channel2.credits.source === "whois") return;
+    const current = channel2.credits.used;
+    if (current !== null && used <= current) return;
     channel2.credits.used = used;
-    channel2.credits.source = "notice";
+    if (channel2.credits.source !== "whois") channel2.credits.source = "notice";
     this.emit({ type: "credits", channel: channel2.name, used, total: channel2.credits.total ?? used });
   }
-  /** Total credits: the sum of known agent totals, else the sum of per-channel figures, else null. */
+  /**
+   * Total credits used: the sum of the per-channel figures (the rows the dashboard, the credits tool and the summary
+   * show), else the sum of known agent totals, else null.
+   */
   totalCredits() {
-    const agentTotals = this.agents().flatMap((a) => a.totalCredits === null ? [] : [a.totalCredits]);
-    if (agentTotals.length > 0) return round2(agentTotals.reduce((a, b) => a + b, 0));
     const used = this.listChannels().flatMap((c) => c.credits.used === null ? [] : [c.credits.used]);
-    return used.length > 0 ? round2(used.reduce((a, b) => a + b, 0)) : null;
+    if (used.length > 0) return round2(used.reduce((a, b) => a + b, 0));
+    const agentTotals = this.agents().flatMap((a) => a.totalCredits === null ? [] : [a.totalCredits]);
+    return agentTotals.length > 0 ? round2(agentTotals.reduce((a, b) => a + b, 0)) : null;
   }
   // ---- commits ---------------------------------------------------------------------------
   addCommit(channel2, entry) {
@@ -3654,6 +3683,8 @@ var WHOIS_WAIT_MS = 15e3;
 var MIN_REARM_MS = 6e4;
 var HISTORY_LIMIT = 30;
 var MAX_SUMMARY_CHANNELS = 500;
+var REDO_AFTER_FIGURE_MS = 3e4;
+var isEmpty = (s) => s.totalCredits === null && s.channels.length === 0;
 var round22 = (n) => Math.round(n * 100) / 100;
 var isNum = (v) => typeof v === "number" && Number.isFinite(v);
 var isRecord4 = (v) => typeof v === "object" && v !== null && !Array.isArray(v);
@@ -3695,9 +3726,31 @@ function createSummaryService({ store, bridge, paths, clock, logger: logger2 }) 
   let started = false;
   let epoch = 0;
   const cancelWaits = /* @__PURE__ */ new Set();
+  let offCredits;
+  let redoTimer;
+  let redo = false;
+  const clearRedo = () => {
+    offCredits?.();
+    offCredits = void 0;
+    if (redoTimer !== void 0) clock.clearTimeout(redoTimer);
+    redoTimer = void 0;
+  };
+  const watchForFigures = () => {
+    if (offCredits !== void 0 || redoTimer !== void 0) return;
+    offCredits = store.on("credits", () => {
+      offCredits?.();
+      offCredits = void 0;
+      redoTimer = clock.setTimeout(() => {
+        redoTimer = void 0;
+        redo = true;
+        void service.runNow();
+      }, REDO_AFTER_FIGURE_MS);
+    });
+  };
   const clearTimers = () => {
     if (runTimer !== void 0) clock.clearTimeout(runTimer);
     if (fallbackTimer !== void 0) clock.clearTimeout(fallbackTimer);
+    clearRedo();
     runTimer = void 0;
     fallbackTimer = void 0;
     offState?.();
@@ -3778,10 +3831,17 @@ function createSummaryService({ store, bridge, paths, clock, logger: logger2 }) 
     const refreshed = store.state === "registered" ? await refresh() : false;
     const summary = build(refreshed);
     if (epoch !== epochAtStart) return summary;
-    const history = [...file?.history ?? [], summary].slice(-HISTORY_LIMIT);
-    file = { lastRunAt: clock.now(), latest: summary, history };
+    const previous = file?.history ?? [];
+    const replaceEmpty = redo && file?.latest != null && isEmpty(file.latest) && clock.now() - file.lastRunAt < DAY_MS;
+    redo = false;
+    const kept = replaceEmpty ? previous.slice(0, -1) : previous;
+    const history = [...kept, summary].slice(-HISTORY_LIMIT);
+    file = { lastRunAt: replaceEmpty ? file.lastRunAt : clock.now(), latest: summary, history };
     persist(file);
-    if (!stopped) arm();
+    if (!stopped) {
+      arm();
+      if (isEmpty(summary)) watchForFigures();
+    }
     return summary;
   };
   const service = {

@@ -1,6 +1,7 @@
 // Maps parsed IRC messages to store updates and typed events. Connection control (001, PING, 464, ERROR) is the client's job.
 import { irc_lower, isValidChannel, isValidNick, type IrcMessage } from "../../vendor/irc-protocol/src/index.js";
 import type { Logger } from "../log.js";
+import { stripFormatting } from "./format.js";
 import { parseNotice, type DeniedReason } from "./notices.js";
 import type { Store, WhoisInfo } from "./store.js";
 
@@ -140,8 +141,17 @@ export function createDispatcher(store: Store, hooks: DispatchHooks = {}, logger
     return { channel: null, candidates: [] };
   };
 
-  const onDenied = (agent: string, action: string, reason: DeniedReason, detail: string | undefined): void => {
-    const { channel, candidates } = resolveDenial(agent);
+  const onDenied = (agent: string, action: string, reason: DeniedReason, detail: string | undefined, fromChannel?: string): void => {
+    let resolved: { channel: string | null; candidates: readonly string[] };
+    if (fromChannel !== undefined) {
+      // A channel NOTICE from the sender itself: only a known agent that is a member of that channel can open an item.
+      const known = store.channel(fromChannel);
+      if (known === undefined || !store.isAgent(agent) || !known.members.has(irc_lower(agent))) return;
+      resolved = { channel: known.name, candidates: [] };
+    } else {
+      resolved = resolveDenial(agent);
+    }
+    const { channel, candidates } = resolved;
     if (reason === "needs-op") {
       store.addNeedsOp(agent, action, channel, candidates);
       return;
@@ -153,7 +163,7 @@ export function createDispatcher(store: Store, hooks: DispatchHooks = {}, logger
 
   const onNotice = (message: IrcMessage): void => {
     const target = message.params[0] ?? "";
-    const text = message.params[1] ?? "";
+    const text = stripFormatting(message.params[1] ?? "");
     const from = nickOfPrefix(message.prefix);
     const toChannel = isValidChannel(target);
     if (toChannel && !admit(target)) return;
@@ -195,7 +205,7 @@ export function createDispatcher(store: Store, hooks: DispatchHooks = {}, logger
         break;
       }
       case "denied":
-        onDenied(parsed.agent, parsed.action, parsed.reason, parsed.detail);
+        onDenied(parsed.agent, parsed.action, parsed.reason, parsed.detail, parsed.channel);
         break;
     }
   };
@@ -386,7 +396,7 @@ export function createDispatcher(store: Store, hooks: DispatchHooks = {}, logger
         break;
       case "PRIVMSG": {
         const target = p[0] ?? "";
-        if (isValidChannel(target) && admit(target)) store.addLine(target, nickOfPrefix(message.prefix) || "server", "privmsg", p[1] ?? "");
+        if (isValidChannel(target) && admit(target)) store.addLine(target, nickOfPrefix(message.prefix) || "server", "privmsg", stripFormatting(p[1] ?? ""));
         break;
       }
       case "NOTICE":

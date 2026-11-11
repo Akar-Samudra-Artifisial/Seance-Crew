@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { Config } from "../src/config.js";
 import { createLogger } from "../src/log.js";
 import { appPaths, ensureDataDir } from "../src/paths.js";
-import { createSummaryService, DAY_MS, HISTORY_LIMIT, MAX_SUMMARY_CHANNELS, parseSummaryFile, REGISTER_WAIT_MS, WHOIS_WAIT_MS, type Summary, type SummaryFile } from "../src/summary.js";
+import { createSummaryService, DAY_MS, HISTORY_LIMIT, REDO_AFTER_FIGURE_MS, MAX_SUMMARY_CHANNELS, parseSummaryFile, REGISTER_WAIT_MS, WHOIS_WAIT_MS, type Summary, type SummaryFile } from "../src/summary.js";
 import { makeBridge } from "./helpers.js";
 
 const SECRET = "irc-secret-summary-4711";
@@ -198,7 +198,7 @@ describe("content", () => {
     expect(latest?.stale).toBe(false);
     expect(latest?.channels.map((c) => c.name)).toEqual(["#b", "#a"]);
     expect(latest?.channels[0]).toEqual({ name: "#b", used: 0.3, total: 0.5 });
-    expect(latest?.totalCredits).toBe(0.5);
+    expect(latest?.totalCredits).toBe(0.4); // the sum of the rows (0.30 + 0.10), not the agent budget
     h.service.stop();
   });
 
@@ -358,6 +358,44 @@ describe("one source for rows and total", () => {
     const sum = Math.round((latest?.channels ?? []).reduce((a, c) => a + c.used, 0) * 100) / 100;
     expect(latest?.totalCredits).toBe(sum);
     h.service.stop();
+  });
+});
+
+describe("a run that finds no figures", () => {
+  it("runs again shortly after the first figure arrives, replacing the empty entry and keeping the schedule", async () => {
+    const h = boot();
+    h.service.start();
+    await h.settle();
+    expect(h.service.latest()).toMatchObject({ totalCredits: null, channels: [] });
+    const lastRunAt = h.file().lastRunAt;
+    h.store.applyList([{ name: "#live", count: 1, topic: "" }]);
+    h.store.setCreditsFromWhois("#live", 1.5, 10);
+    await h.advanceBy(REDO_AFTER_FIGURE_MS);
+    const latest = h.service.latest();
+    expect(latest).toMatchObject({ totalCredits: 1.5, channels: [{ name: "#live", used: 1.5, total: 10 }] });
+    expect(latest?.totalCredits).toBe((latest?.channels ?? []).reduce((a, c) => a + c.used, 0));
+    expect(h.file().history).toHaveLength(1);
+    expect(h.file().lastRunAt).toBe(lastRunAt);
+    h.service.stop();
+  });
+
+  it("does nothing extra while no figure arrives", async () => {
+    const h = boot();
+    h.service.start();
+    await h.settle();
+    await h.advanceBy(60 * 60_000);
+    expect(h.file().history).toHaveLength(1);
+    h.service.stop();
+  });
+
+  it("stop() removes the figure listener", async () => {
+    const h = boot();
+    const listeners = h.store.listenerCount("credits");
+    h.service.start();
+    await h.settle();
+    expect(h.store.listenerCount("credits")).toBe(listeners + 1);
+    h.service.stop();
+    expect(h.store.listenerCount("credits")).toBe(listeners);
   });
 });
 

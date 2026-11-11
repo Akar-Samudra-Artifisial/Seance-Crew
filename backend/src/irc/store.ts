@@ -1,6 +1,7 @@
 // In-memory model of everything the bridge knows about the server. State is never persisted.
 import { irc_lower } from "../../vendor/irc-protocol/src/index.js";
 import type { Clock } from "../clock.js";
+import { stripFormatting } from "./format.js";
 import { Ring } from "./ring.js";
 
 export type BridgeState = "unconfigured" | "connecting" | "registered" | "reconnecting" | "auth-failed" | "nick-rejected" | "config-invalid" | "duplicate-instance";
@@ -278,7 +279,8 @@ export class Store {
   addLine(channelName: string, from: string, kind: ChannelLineKind, text: string): ChannelLine {
     const channel = this.ensureChannel(channelName);
     const ts = this.clock.now();
-    const line = channel.ring.push((seq) => ({ seq, ts, from, kind, text }));
+    const clean = stripFormatting(text);
+    const line = channel.ring.push((seq) => ({ seq, ts, from, kind, text: clean }));
     this.emit({ type: "line", channel: channel.name, line });
     return line;
   }
@@ -371,19 +373,27 @@ export class Store {
     this.bump();
   }
 
+  /**
+   * The "credits used" figure of a revert notice. WHOIS is authoritative while the agent is present, but after an
+   * exorcise the last WHOIS is stale, so a higher notice figure wins. Credits never go down because of a notice.
+   */
   setCreditsFromNotice(channel: Channel, used: number): void {
-    if (channel.credits.source === "whois") return;
+    const current = channel.credits.used;
+    if (current !== null && used <= current) return;
     channel.credits.used = used;
-    channel.credits.source = "notice";
+    if (channel.credits.source !== "whois") channel.credits.source = "notice";
     this.emit({ type: "credits", channel: channel.name, used, total: channel.credits.total ?? used });
   }
 
-  /** Total credits: the sum of known agent totals, else the sum of per-channel figures, else null. */
+  /**
+   * Total credits used: the sum of the per-channel figures (the rows the dashboard, the credits tool and the summary
+   * show), else the sum of known agent totals, else null.
+   */
   totalCredits(): number | null {
-    const agentTotals = this.agents().flatMap((a) => (a.totalCredits === null ? [] : [a.totalCredits]));
-    if (agentTotals.length > 0) return round2(agentTotals.reduce((a, b) => a + b, 0));
     const used = this.listChannels().flatMap((c) => (c.credits.used === null ? [] : [c.credits.used]));
-    return used.length > 0 ? round2(used.reduce((a, b) => a + b, 0)) : null;
+    if (used.length > 0) return round2(used.reduce((a, b) => a + b, 0));
+    const agentTotals = this.agents().flatMap((a) => (a.totalCredits === null ? [] : [a.totalCredits]));
+    return agentTotals.length > 0 ? round2(agentTotals.reduce((a, b) => a + b, 0)) : null;
   }
 
   // ---- commits ---------------------------------------------------------------------------

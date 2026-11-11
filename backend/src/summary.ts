@@ -17,6 +17,9 @@ export const WHOIS_WAIT_MS = 15_000;
 export const MIN_REARM_MS = 60_000;
 export const HISTORY_LIMIT = 30;
 export const MAX_SUMMARY_CHANNELS = 500;
+/** A run that found no figures at all is repeated this long after the first credits figure arrives. */
+export const REDO_AFTER_FIGURE_MS = 30_000;
+const isEmpty = (s: { totalCredits: number | null; channels: readonly unknown[] }): boolean => s.totalCredits === null && s.channels.length === 0;
 
 export type Summary = {
   /** UTC, YYYY-MM-DD. */
@@ -103,10 +106,37 @@ export function createSummaryService({ store, bridge, paths, clock, logger }: Su
   /** Counts stop() calls, so a run can tell that it was aborted while it waited. */
   let epoch = 0;
   const cancelWaits = new Set<() => void>();
+  /** After an empty run: the listener for the first credits figure, and the short timer it arms. */
+  let offCredits: (() => void) | undefined;
+  let redoTimer: unknown;
+  /** True only for the redo run: it replaces the empty entry instead of adding one. */
+  let redo = false;
+
+  const clearRedo = (): void => {
+    offCredits?.();
+    offCredits = undefined;
+    if (redoTimer !== undefined) clock.clearTimeout(redoTimer);
+    redoTimer = undefined;
+  };
+
+  const watchForFigures = (): void => {
+    if (offCredits !== undefined || redoTimer !== undefined) return;
+    offCredits = store.on("credits", () => {
+      offCredits?.();
+      offCredits = undefined;
+      // Give the rebuild a moment to finish the other WHOIS replies, then build the summary again.
+      redoTimer = clock.setTimeout(() => {
+        redoTimer = undefined;
+        redo = true;
+        void service.runNow();
+      }, REDO_AFTER_FIGURE_MS);
+    });
+  };
 
   const clearTimers = (): void => {
     if (runTimer !== undefined) clock.clearTimeout(runTimer);
     if (fallbackTimer !== undefined) clock.clearTimeout(fallbackTimer);
+    clearRedo();
     runTimer = undefined;
     fallbackTimer = undefined;
     offState?.();
@@ -202,10 +232,21 @@ export function createSummaryService({ store, bridge, paths, clock, logger }: Su
     const summary = build(refreshed);
     // stop() aborted this run: do not record a run time, so the next start runs again instead of waiting 24 h.
     if (epoch !== epochAtStart) return summary;
-    const history = [...(file?.history ?? []), summary].slice(-HISTORY_LIMIT);
-    file = { lastRunAt: clock.now(), latest: summary, history };
+    // A summary taken before the server state was rebuilt has no figures. The redo below replaces it, not adds to it,
+    // and keeps the daily schedule; a run that is also due for the day is a normal run.
+    const previous = file?.history ?? [];
+    const replaceEmpty = redo && file?.latest != null && isEmpty(file.latest) && clock.now() - file.lastRunAt < DAY_MS;
+    redo = false;
+    const kept = replaceEmpty ? previous.slice(0, -1) : previous;
+    const history = [...kept, summary].slice(-HISTORY_LIMIT);
+    file = { lastRunAt: replaceEmpty ? file!.lastRunAt : clock.now(), latest: summary, history };
     persist(file);
-    if (!stopped) arm();
+    if (!stopped) {
+      arm();
+      // Registration happens before LIST, NAMES and WHOIS have filled the store, so the first run can find nothing
+      // (the dashboard then showed "total credits n/a" for a whole day). Run again shortly after the first figure arrives.
+      if (isEmpty(summary)) watchForFigures();
+    }
     return summary;
   };
 

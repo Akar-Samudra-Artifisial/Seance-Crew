@@ -112,7 +112,13 @@ Notice handling has two sources. Both were checked against the Séance server co
 1. **Channel notices from ChanServ** (`:ChanServ!… NOTICE #chan :<text>`): worktree, ready, closed, reverted, commit. Accepted only when the prefix nick passes the vendored `isServiceNick` and the target is a channel, so an ordinary user cannot forge them.
 2. **Op notices from the server itself** (`:<serverName> NOTICE <ournick> :ops: …`): the runner sends the `ops:` text with `noticeTo` to each human `+o` member of the channel, with the **server name as prefix** and **our nick as target**. The channel is not in the text. Accepted only when the prefix contains no `!` (a server prefix, not a user mask) and the target is our own nick. A user cannot forge this, because user messages always carry a `nick!user@host` prefix.
 
-Consequence: the bridge only receives `ops:` notices for channels where its own nick is `+o`. The store therefore tracks our own modes per channel (from `353`, `MODE`), and `summon` is expected to be followed by granting op to the crew nick or by the human opping it. This is a documented limit, not a bug: without `+o` for the crew nick there is no needs-op inbox for that channel.
+3. **The agent's own denial** (`:<agent>!… NOTICE #chan :ops: <agent> denied <action>: <reason>`): the runner also announces each denial with `channelNotice`, so it reaches every member of the channel, including a crew nick without `+o`. Verified on the live server (`coder (notice): ops: coder denied Creating NOTES.md: needs-op`). `parseNotice` accepts it only when the target is a channel, the sender is not a service nick, the prefix has a `!`, and the sender nick equals the `<agent>` in the text. The dispatcher then opens an item only when that nick is a known agent (a WHOIS with `model:`) and a member of that channel; the channel is the one the notice arrived in. A human cannot open an item for someone else, and a non-agent cannot open one at all. The text stays untrusted channel text.
+
+Consequence: the server-prefixed form (2) reaches only operators, but the channel form (3) does not need `+o` for the crew nick, so the needs-op inbox works for any channel the crew nick is a member of. `+o` is still needed to grant modes and to exorcise.
+
+IRC formatting codes are removed before a line is stored (`src/irc/format.ts`): style bytes, `\x03` colour with its digits and `\x04` hex colour, so a colour code never leaves digits behind.
+
+Credits: WHOIS is authoritative while the agent is present, but its last figure is stale after an exorcise. A `reverted` notice therefore raises the channel's used credits to the notice value when higher (never lowers it). The total is the sum of the per-channel figures (the same rows the dashboard, the `credits` tool and the daily summary show). A daily summary taken right after registration (before the rebuild has filled the store) has no figures; it is built again 30 s after the first credits figure arrives, replacing the empty entry without moving the daily schedule.
 
 Patterns (case-sensitive, anchored):
 
@@ -233,7 +239,7 @@ At most one `WebSocket` is open at a time, and a new one is created only after t
 
 ### Property 5: Notices cannot be forged
 
-`parseNotice` accepts channel notices only from a service nick, and accepts `ops:` notices only with a server prefix (no `!`) targeted at our own nick.
+`parseNotice` accepts channel notices only from a service nick, accepts `ops:` notices with a server prefix (no `!`) targeted at our own nick, and accepts an `ops:` channel notice only from the agent named in it (which the dispatcher confirms is a known agent in that channel).
 
 **Validates: Requirements 7.4, 7.5, 7.6**
 

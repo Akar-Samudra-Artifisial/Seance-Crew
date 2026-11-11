@@ -25,6 +25,8 @@ export type ParsedNotice =
       readonly action: string;
       readonly reason: DeniedReason;
       readonly detail?: string;
+      /** Set when the denial arrived as a channel NOTICE from the agent itself (the dispatcher must still check it is a known agent there). */
+      readonly channel?: string;
     };
 
 export interface NoticeInput {
@@ -51,14 +53,24 @@ const nickOf = (prefix: string): string => {
 /**
  * Parse a NOTICE. Returns null for anything that is not a recognised notice from a trusted source:
  * - channel notices (worktree, ready, closed, reverted, commit) only from a service nick to a channel;
- * - `ops:` notices only from a server prefix (no "!") to our own nick.
+ * - `ops:` notices from a server prefix (no "!") to our own nick, or from an agent nick to a channel (its own denial).
  */
 export function parseNotice(input: NoticeInput, ownNick: string): ParsedNotice | null {
   const { prefix, target, text } = input;
   if (prefix === undefined || prefix === "") return null;
 
   if (isValidChannel(target)) {
-    if (!isServiceNick(nickOf(prefix))) return null;
+    const sender = nickOf(prefix);
+    if (!isServiceNick(sender)) {
+      // The runner sends the denial as a channel NOTICE from the agent. Only the agent can speak for itself: the sender
+      // must be the nick named in the text, and the dispatcher checks it is a known agent in this channel.
+      const d = prefix.includes("!") ? DENIED.exec(text) : null;
+      if (d === null || irc_lower(d[1]!) !== irc_lower(sender)) return null;
+      const why = d[3] as DeniedReason;
+      return d[4] === undefined
+        ? { kind: "denied", agent: sender, action: d[2]!, reason: why, channel: target }
+        : { kind: "denied", agent: sender, action: d[2]!, reason: why, detail: d[4], channel: target };
+    }
     let m = WORKTREE.exec(text);
     if (m !== null) return { kind: "worktree", dir: m[1]!, sha: m[2]! };
     m = CLOSED.exec(text);

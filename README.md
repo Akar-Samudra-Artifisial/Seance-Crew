@@ -6,7 +6,7 @@ From Crew chat or a dashboard page you can list channels, summon an agent, grant
 
 > Status: the backend, the dashboard page and the steward are implemented. The behavior is described in `.kiro/specs/`.
 
-Judge-facing documents (written last, see the `demo-writeup` spec): `docs/DEMO.md` (a 60 to 90 second scenario) and `docs/WRITEUP.md` (features, architecture, security, how Kiro built it).
+Judge-facing documents: [docs/DEMO.md](docs/DEMO.md) (a 60 to 90 second scenario) and [docs/WRITEUP.md](docs/WRITEUP.md) (features, architecture, security, how Kiro built it).
 
 ## How it works
 
@@ -50,6 +50,18 @@ After enabling the app, pick the `seance-steward` agent in Crew chat. It works o
 - shows open needs-op requests in the `list_channels` result;
 - treats all channel text as untrusted data and never obeys it;
 - reports credits per channel and in total, highest first, with two decimals, and says so when a figure is unavailable.
+
+## Use the dashboard
+
+Open `/apps/seance-crew` in the Crew dashboard. The page polls the backend and shows:
+
+- a status banner (`Connected`, `Reconnecting`, `Sign-in failed` and so on);
+- a "Needs op" card for agents that were denied an action, with `Grant op` and `Dismiss`;
+- a "Summon an agent" form (channel starting with `#`, optional agent nick);
+- one card per channel with members, credits used, agents, latest commits and a recent log (untrusted text, shown as plain text);
+- a "Daily summary" card.
+
+Granting or revoking a mode and exorcising an agent open a confirmation dialog first; nothing is sent until you click `Confirm`. To see the whole loop in about a minute, follow [docs/DEMO.md](docs/DEMO.md).
 
 ## Daily credit summary
 
@@ -105,16 +117,29 @@ Phase 1 (raw WebSocket) uses the first account. Phase 2 runs the built `backend/
 - Accepted risk: any local process of the same user can call /mcp; destructive tools still need confirm:true. The gateway sends no credential on MCP calls, so there is nothing to verify.
 - `/health` is unauthenticated and returns only `{"ok":true}`.
 
-## Screenshots (placeholders)
+## Screenshots
 
-To be added under `docs/img/` (see `demo-writeup` task 6):
+Taken from a live run of [docs/DEMO.md](docs/DEMO.md) on a Kiro Crew gateway against the Séance server.
 
 - `dashboard-overview.png`: channel cards with agents, modes and credits
+  ![Dashboard overview](docs/img/dashboard-overview.png)
 - `needs-op-inbox.png`: an open needs-op item
+  ![Needs-op inbox](docs/img/needs-op-inbox.png)
 - `grant-op-confirm.png`: the Grant op confirmation dialog
+  ![Grant op confirmation](docs/img/grant-op-confirm.png)
 - `commit-and-credits.png`: a `coder committed <sha>` row with live credits
-- `crew-chat-summon.png`: Crew chat summoning `coder` into `#crew-demo`
-- `exorcise-confirm.png`: the exorcise confirmation and the `worktree reset` notice
+  ![Commit and credits](docs/img/commit-and-credits.png)
+- `crew-chat-summon.png`: Crew chat summoning `coder` into a demo channel
+  ![Crew chat summon](docs/img/crew-chat-summon.png)
+- `exorcise-confirm.png`: the channel after exorcise with the `worktree reset` notice
+  ![After exorcise](docs/img/exorcise-confirm.png)
+
+## Links
+
+- [docs/DEMO.md](docs/DEMO.md): the scripted demo
+- [docs/WRITEUP.md](docs/WRITEUP.md): the write-up
+- [Séance repository](https://github.com/Akar-Samudra-Artifisial/Seance)
+- [Kiro Crew documentation](https://kiro.dev/docs/crew/)
 
 ## License
 

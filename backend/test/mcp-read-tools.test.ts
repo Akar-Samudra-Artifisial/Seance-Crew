@@ -182,9 +182,9 @@ describe("credits", () => {
     const result = await h.call("credits");
     const data = structured(result) as { channels: Array<Record<string, unknown>>; total: number | null; summary: unknown };
     expect(data.channels.find((c) => c["channel"] === "#fix")).toMatchObject({ used: 0.1, total: 0.2, source: "whois" });
-    expect(data.total).toBe(0.2);
+    expect(data.total).toBe(0.1); // the sum of the per-channel "used" figures
     expect(textOf(result)).toContain("#fix: 0.1 used of 0.2");
-    expect(textOf(result)).toContain("Total credits: 0.2");
+    expect(textOf(result)).toContain("Total credits: 0.1");
   });
 
   it("says unavailable for channels without figures", async () => {
