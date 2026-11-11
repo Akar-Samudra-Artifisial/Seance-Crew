@@ -90,7 +90,7 @@ One Kiro Crew dashboard page (`/apps/seance-crew`) shows the Séance channels th
 
 1. THE page SHALL be fully operable with the keyboard, with visible focus, and confirmation dialogs SHALL trap focus, close on Escape, and return focus to the trigger.
 2. THE page SHALL use semantic headings, labelled form fields, and buttons with accessible names that include the agent and channel.
-3. THE page SHALL NOT use color as the only way to show state, and all text (hints, status banner, labels) SHALL have a contrast ratio of at least 4.5:1 against its background: text colours come from the host variables `--card-fg` and `--muted-fg` and fall back to the inherited colour, never to a fixed dark colour.
+3. THE page SHALL NOT use color as the only way to show state, and all text (hints, status banner, labels) SHALL have a contrast ratio of at least 4.5:1 against its background: text colours come from the host variables `--card-fg` and `--muted` (never `--muted-fg`, which is black on this host), each with a fallback that keeps the same contrast, never a fixed dark colour.
 4. THE page SHALL use the `@kirocrew/app-sdk` UI components and Crew theme tokens where available, and SHALL NOT bundle React, `@kirocrew/app-sdk` or `lucide-react`.
 5. THE page SHALL not contain the trademarked name forbidden by `.kiro/steering/security.md`.
 
@@ -103,3 +103,20 @@ One Kiro Crew dashboard page (`/apps/seance-crew`) shows the Séance channels th
 1. THE build SHALL produce `ui/dist/index.mjs` as an ES module with `react`, `react-dom`, `react/jsx-runtime`, `@kirocrew/app-sdk`, `@kirocrew/app-sdk/ui` and `lucide-react` as externals.
 2. THE `app.json` `ui.entry` SHALL point at that file and `ui.pages[0].route` SHALL be `/apps/seance-crew`.
 3. THE repository SHALL commit `ui/dist/index.mjs` and `backend/dist/server.js`.
+
+### Requirement 8: Layout refresh and app icon
+
+**User Story:** As an operator, I want a page I can scan in a few seconds and an app I can find in the sidebar, so that I see what needs my attention without reading sentences.
+
+#### Acceptance Criteria
+
+1. THE page SHALL show, under the page header, a slim status line WHEN the bridge is `registered` (status icon, the word "Connected", `<host> as <nick>`, and "updated <age> ago" from the last successful poll, refreshed every 5 seconds and kept outside the `role="status"` element so it is not announced each time), and SHALL keep the full banner with its action text for every other bridge state.
+2. THE page SHALL show an overview row of six tiles (Channels, Agents ready as `ready / total`, Operators, Needs op, Total credits, Commits) computed from `GET /api/state` (the Commits tile adds up `commitCount`, every commit the backend keeps, not only the rows it sends), as two groups of three that sit side by side when the row is wide (six in one row) and stack when it is narrow (3 + 3); WHEN Needs op is above zero, THE tile SHALL use the warn tone on its border and icon.
+3. THE page SHALL lay out the channels and an aside (Needs op first, then Summon, then the daily summary) as two columns that wrap into one column on narrow widths without media queries.
+4. EACH channel card SHALL show the name with member and agent counts and the last activity as pills, the topic on one line with the full text as a tooltip, credits as text plus a `role="meter"` bar (omitted when the total is unknown), agents as aligned rows, at most 5 commits newest first with a relative age and, when the backend keeps more (`commitCount`), the text "Showing the newest 5 of N commits.", and the log, open by default, as a time | sender and text grid.
+5. THE page SHALL use one set of primitives (panel, section header, pill, button, empty state, skeleton, icon) and design tokens for space, radius, type and colour; a tone SHALL change only borders, bars and icons, never the colour of text.
+6. WHEN there are no channels, no agents, no commits, no log lines, no inbox items or no summary, THE page SHALL show an empty state with an icon, a title and, where useful, a hint; WHILE the first state is loading, THE page SHALL show placeholder blocks hidden from assistive technology and a visually hidden "Loading channels…" text.
+7. EVERY interactive element SHALL show a visible focus ring (2 px accent outline, 2 px offset) on keyboard focus, and icons SHALL be decorative (`aria-hidden="true"`) next to a word or an accessible name.
+8. WHEN the daily summary is from an earlier day than the server's date, THE page SHALL label it "Last summary: <date>" and SHALL show today's live total credits next to it; THE Channels heading SHALL sit inside its own panel, like Needs op; the meter SHALL clamp `aria-valuenow` to `[0, max]` and show "n/a" for a total of zero; the confirm button of a grant SHALL use the primary style, and the danger style SHALL stay for exorcise and revoke; every button's accessible name SHALL start with its visible text.
+9. THE `GET /api/state` response SHALL carry `commitCount` per channel: how many commits the store keeps (up to 50) while `commits` holds the newest 5.
+10. THE app SHALL show the Séance candle in the Crew sidebar: `iconPath` SHALL point at a 512×512 PNG of the candle, and `ui.pages[0]` SHALL set `iconUrl` and `iconInactiveUrl` to SVG files under `ui/` (relative to `ui/`) that contain no script, no external reference and no event handler; the inactive SVG SHALL use the same shapes in greys.

@@ -42,19 +42,40 @@ describe("channel text is cleaned before rendering", () => {
   };
   const forbidden = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u202A-\u202E\u2066-\u2069]/;
 
-  it("LogPanel strips controls from sender and text", () => {
+  it("LogPanel strips controls from sender and text in the log grid", () => {
     const html = renderToStaticMarkup(<LogPanel channel={channel.name} lines={channel.lines} />);
     expect(forbidden.test(html)).toBe(false);
-    expect(html).toContain("<span>bob</span>");
+    expect(html).toContain("<strong>bob</strong>");
     expect(html).toContain("safeevilxend");
   });
 
-  it("ChannelCard strips controls from name, topic, nicks, model and commit agent", () => {
-    const html = renderToStaticMarkup(<ChannelCard channel={channel} />);
+  it("ChannelCard strips controls from name, topic (text and title), nicks, model and commit agent", () => {
+    const html = renderToStaticMarkup(<ChannelCard channel={channel} now={60_000} />);
     expect(forbidden.test(html)).toBe(false);
-    expect(html).toContain("Topic: topicsafeevilxend");
-    expect(html).toContain("<strong>nick</strong>");
-    expect(html).toContain("by agent");
+    expect(html).toContain('title="topicsafeevilxend"');
+    expect(html).toContain("Topic: </span>topicsafeevilxend");
+    expect(html).toMatch(/<strong[^>]*>nick<\/strong>/);
+    expect(html).toContain("<span>agent</span>");
+  });
+
+  it("escapes HTML in the topic title, the commit rows and the log grid", () => {
+    const evil = '"><img src=x onerror=alert(1)>';
+    const html = renderToStaticMarkup(
+      <ChannelCard
+        channel={{
+          ...channel,
+          topic: evil,
+          commits: [{ agent: evil, sha: `<b>${"\u202E"}sha</b>`, files: 1, ts: 1 }],
+          lines: [{ seq: 1, ts: 1, from: evil, kind: "join", text: `<script>${"\u2066"}x</script>` }],
+        }}
+        now={60_000}
+      />,
+    );
+    expect(html).not.toContain("<img");
+    expect(html).not.toContain("<script");
+    expect(html).not.toContain("<b>");
+    expect(html).toContain('title="&quot;&gt;&lt;img');
+    expect(forbidden.test(html)).toBe(false);
   });
 });
 
@@ -191,8 +212,10 @@ describe("styles", () => {
     expect(styles.logBox.maxHeight).toBeTruthy();
     expect(buttonStyle("primary").background).toBe(color.accent);
     expect(buttonStyle("danger").background).toBe(color.danger);
-    expect(buttonStyle("plain").background).toBe(color.surface);
-    expect(buttonStyle("plain", true).opacity).toBeLessThan(1);
+    expect(buttonStyle("secondary").background).toBe(color.surface);
+    expect(buttonStyle("secondary", true).opacity).toBeLessThan(1);
+    expect(buttonStyle("secondary", false, "sm").padding).toBe("0.25rem 0.625rem");
+    expect(buttonStyle("secondary", false, "md").padding).toBe("0.375rem 0.875rem");
   });
 
   it("colour banners differ by level and always have a border", () => {

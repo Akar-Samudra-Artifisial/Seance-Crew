@@ -242,15 +242,20 @@ describe("Inbox", () => {
   const props = { now: 61_000, onGrant: noop, onDismiss: noop, pendingId: null, errors: {} };
 
   it("says so when the inbox is empty", () => {
-    expect(renderToStaticMarkup(<Inbox items={[]} {...props} />)).toContain("No open permission requests.");
+    const html = renderToStaticMarkup(<Inbox items={[]} {...props} />);
+    expect(html).toContain("No open requests");
+    expect(html).not.toContain("Grant op");
   });
 
-  it("lists channel, agent, denied action and age", () => {
+  it("lists channel, agent → action and age, with Grant op primary and Dismiss ghost", () => {
     const html = renderToStaticMarkup(<Inbox items={[item()]} {...props} />);
-    expect(html).toContain("coder");
+    expect(html).toContain("<strong>coder</strong> → <span>Run npm test</span>");
     expect(html).toContain("#fix-bug");
-    expect(html).toContain("Run npm test");
-    expect(html).toContain("Waiting 1 min");
+    expect(html).toContain("was denied 1 min ago");
+    const grantButton = /<button [^>]*aria-label="Grant op to coder in #fix-bug"[^>]*>/.exec(html)?.[0] ?? "";
+    const dismissButton = /<button [^>]*aria-label="Dismiss the request from coder in #fix-bug"[^>]*>/.exec(html)?.[0] ?? "";
+    expect(grantButton).toContain("background:var(--accent");
+    expect(dismissButton).toContain("background:transparent");
   });
 
   it("gives the buttons accessible names with the agent and channel", () => {
@@ -261,8 +266,20 @@ describe("Inbox", () => {
 
   it("offers one Grant button per candidate when the channel is unknown", () => {
     const html = renderToStaticMarkup(<Inbox items={[item({ channel: null, candidates: ["#a", "#b"] })]} {...props} />);
-    expect(html).toContain('aria-label="Grant op to coder in #a"');
-    expect(html).toContain('aria-label="Grant op to coder in #b"');
+    // Label in name: the accessible name starts with the visible text "Grant op in #a".
+    expect(html).toContain('aria-label="Grant op in #a to coder"');
+    expect(html).toContain('aria-label="Grant op in #b to coder"');
+    expect(html).toMatch(/aria-label="Grant op in #a to coder"[^>]*>(?:<svg[\s\S]*?<\/svg>)?Grant op in #a<\/button>/);
+  });
+
+  it("every Inbox button's accessible name starts with its visible text", () => {
+    const html = renderToStaticMarkup(<Inbox items={[item(), item({ id: "i2", channel: null, candidates: ["#a", "#b"] })]} {...props} pendingId="i1" />);
+    const buttons = [...html.matchAll(/<button[^>]*aria-label="([^"]+)"[^>]*>([\s\S]*?)<\/button>/g)];
+    expect(buttons.length).toBeGreaterThanOrEqual(5);
+    for (const [, label, inner] of buttons) {
+      const visible = (inner ?? "").replace(/<svg[\s\S]*?<\/svg>/g, "").replace(/<[^>]+>/g, "").trim();
+      expect(label?.startsWith(visible), `${label} / ${visible}`).toBe(true);
+    }
   });
 
   it("offers no Grant button when the channel cannot be known", () => {

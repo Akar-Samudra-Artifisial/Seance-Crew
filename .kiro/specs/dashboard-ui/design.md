@@ -38,6 +38,7 @@ interface State {
     name: string; topic: string; count: number;
     credits: { used: number | null; total: number | null };
     agents: Array<{ nick: string; modes: string; model: string; ready: boolean }>;
+    commitCount: number; // every commit the store keeps (up to 50); `commits` below holds only the newest 5
     commits: Array<{ agent: string; sha: string; files: number; ts: number }>; // last 5
     lines: Array<{ seq: number; ts: number; from: string; kind: string; text: string }>; // newest 200, untrusted
   }>;
@@ -74,11 +75,57 @@ App
 - `useAppApi()` is the only network access. The page never builds URLs to the backend port.
 - Text from the server is rendered as React text nodes only; there is no `dangerouslySetInnerHTML`.
 - Confirmation copy examples: "Grant +o to coder in #fix-bug? +o lets the agent edit files and run commands in the channel worktree." and "Exorcise coder from #fix-bug? The agent stops and uncommitted work in the worktree is reverted."
-- SDK components (`PageHeader`, `Card`, `CardTitle`, `StatCard`) come from `@kirocrew/app-sdk/ui`; dialogs and badges are small local components because the SDK has no documented dialog.
+- `PageHeader` comes from `@kirocrew/app-sdk/ui`. Panels, stat tiles, pills, buttons and the dialog are small local primitives (`ui/src/ui.tsx`, see "Layout refresh"): the SDK `Card` adds its own margin and animation and `StatCard` does not fit the overview grid, and the SDK has no documented dialog.
 
 ### Types for the SDK
 
 `@kirocrew/app-sdk` is not on npm. The repo carries a hand-written minimal declaration (`ui/src/kirocrew-app-sdk.d.ts`) for the parts used (`useAppApi`, the four UI components). It can be replaced by `curl --fail -o ui/src/kirocrew-app-sdk.d.ts http://localhost:5476/vendor/kirocrew-app-sdk.d.ts` against a local gateway. The bundle treats the SDK as external, so the declaration is for typecheck only.
+
+### Layout refresh (Requirement 8)
+
+```
+PageHeader "Séance Crew"
+StatusBanner      slim line when registered (icon · Connected · host as nick · updated 5 s ago), full banner otherwise
+StatTiles         <section aria-label="Overview">: two groups of three (flex 1 1 23rem each), each group a grid
+                  repeat(auto-fit, minmax(min(100%, 7rem), 1fr)); wide = 6 in a row, narrow = 3 + 3
+columns           flex, wrap, gap 1rem
+ ├─ main  (flex 999 1 34rem)   Panel > SectionHeader "Channels" (h2#channels-heading, tabIndex -1) + ChannelCard[]
+ └─ aside (flex 1 1 20rem)     Inbox (Needs op) → SummonForm → SummaryCard
+ConfirmDialog     portal to document.body (unchanged behaviour)
+```
+
+- No media queries are possible with inline styles, so the layout is intrinsic: the large `flex-grow` keeps the channels wide, and the aside wraps below it once the row cannot hold `34rem + 20rem`.
+- `ChannelCard`: header row (`#` icon, `h3` with the focus id, pills for members, agents and "active N ago" = `serverTime - max(lines.ts)`), topic in one ellipsed line with `title`, a credits row with a `Meter` (`role="meter"`, `aria-valuenow/min/max/valuetext`), agent rows as a 4-column grid (`minmax(8rem,1fr) auto auto 1fr`: nick · mode and ready pills · model · controls), commits (the 5 newest; the state carries only 5 rows, so when `commitCount` is higher the card says "Showing the newest 5 of N commits." instead of offering a toggle with nothing more to show; keys are sha + time + index), and the `<details open>` log rendered as a time | sender + text grid; join/part/mode lines muted italic.
+- `overviewStats(state)` is a pure function (counts agents per channel and adds up `commitCount`), so tiles are tested without a DOM.
+- Ages move: `ui/src/useAging.ts` holds `useAgingNow` (server-anchored, Inbox, every 30 s) and `useNow` (browser clock, status line, every 5 s). The "updated … ago" text is outside the `role="status"` element, so it is not announced on each tick.
+- `Meter` clamps `aria-valuenow` to `[0, max]`; a total of zero gives an empty bar, `aria-valuemax="0"` and value text "n/a".
+- Buttons: the accessible name starts with the visible text (label in name), for example "Grant op in #a to coder" for the visible "Grant op in #a".
+- `SummaryCard` compares the summary date with the server's UTC date; an older one reads "Last summary: <date>" with "Total credits now" (live, from the state) above "Total credits in that summary".
+- `ConfirmDialog` takes `destructive`: the grant confirm uses the primary style; exorcise and revoke keep the danger style.
+- Files: `ui/src/ui.tsx` (Panel, SectionHeader, Pill, Button, EmptyState, Skeleton, StatTile, Meter, SrOnly), `ui/src/Icon.tsx` (17 lucide paths, ISC, inline SVG, `aria-hidden`), `ui/src/StatTiles.tsx`; the text glyphs (◆ ◇ ○ ✔ ◌ ⚠) are replaced by icons, the words stay.
+
+#### Tokens (`ui/src/styles.ts`)
+
+| Kind | Values |
+| --- | --- |
+| Space | 0.25 / 0.5 / 0.75 / 1 / 1.5 / 2 rem |
+| Radius | 0.375 rem controls, 0.5 rem buttons, 0.75 rem panels, 999px pills |
+| Type | 0.75 rem labels and timestamps, 0.875 rem body small and buttons, 1 rem card titles, 1.5 rem stat values; weights 400/500/600; numbers `tabular-nums`; one mono stack |
+| Colour | text only `--card-fg` or `--muted` (never `--muted-fg`); accent, warn (#f59e0b) and danger only on borders, bars, icons and filled buttons (black text on accent and danger) |
+| Buttons | primary, secondary, danger, ghost; md `0.375rem 0.875rem`, sm `0.25rem 0.625rem`; `aria-disabled` instead of `disabled` |
+
+Every text/background pair is listed in `ui/test/contrast.test.ts` (≥ 4.5:1 with the host values). `--muted` on `--bg-hover` is only 4.52:1, so no text uses it: muted text sits on the page background or a panel (5.4:1 and above, and the test requires 4.7:1 for every muted pair), and everything on a pill, button or banner surface is `--card-fg`.
+
+Focus ring: inline styles cannot express `:focus-visible`, so the page root (`data-seance`) renders one `<style>` element with a single rule, `[data-seance] :is(button,a,input,select,textarea,summary,[tabindex]):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px }`. The dialog overlay carries the same attribute. It is not a CSS file and not a CSS-in-JS library. The focus targets (`channel-…` heading, `agent-…` row, `channels-heading`) keep their ids.
+
+#### App icon resolution (verified in the gateway source)
+
+The host sidebar picks, in order: the app `iconPath` (served at `/apps/seance-crew/art/assets/icon.png`), else `ui.pages[0].iconUrl` (served at `/apps/seance-crew/ui/<path>`), else a generic glyph; the lucide `icon` name is ignored for non-builtin apps. `iconInactiveUrl` (relative to `ui/`) is shown when the row is not active. So:
+
+- `assets/icon.png`: 512×512 RGBA candle with a transparent background, rasterised from `ui/icon.svg` with `sips` (the sidebar draws it at 20 px, so no box around it).
+- `ui/icon.svg`: the 16×16 Séance candle without its full-size background rect, `shape-rendering="crispEdges"`.
+- `ui/icon-inactive.svg`: the same shapes in greys (#909098, #A1A1AA, #71717A, #52525B, #D4D4D8).
+- `app.json` keeps `"icon": "Ghost"` as a harmless fallback and adds `"iconUrl": "icon.svg"` and `"iconInactiveUrl": "icon-inactive.svg"`.
 
 ## Data Models
 

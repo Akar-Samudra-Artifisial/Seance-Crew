@@ -1,6 +1,6 @@
-import { Card, CardTitle } from "@kirocrew/app-sdk/ui";
 import { useId, type FormEvent } from "react";
-import { buttonStyle, styles } from "./styles.js";
+import { styles } from "./styles.js";
+import { Button, Panel, SectionHeader } from "./ui.js";
 
 export interface SummonMessage {
   readonly ok: boolean;
@@ -18,6 +18,7 @@ export interface SummonFormProps {
 }
 
 export function SummonForm({ channel, agent, pending, message, onChange, onSubmit }: SummonFormProps) {
+  const headingId = useId();
   const channelId = useId();
   const agentId = useId();
   const hintId = useId();
@@ -26,43 +27,47 @@ export function SummonForm({ channel, agent, pending, message, onChange, onSubmi
     if (!pending) onSubmit();
   };
   return (
-    <Card>
-      <CardTitle>Summon an agent</CardTitle>
-      <form onSubmit={submit} aria-busy={pending}>
-        <div style={styles.field}>
-          <label htmlFor={channelId} style={styles.label}>
-            Channel
-          </label>
-          <input id={channelId} name="channel" style={styles.input} value={channel} placeholder="#fix-bug" onChange={(e) => onChange("channel", e.target.value)} aria-describedby={hintId} required />
-          <span id={hintId} style={styles.hint}>
-            The channel name must start with #. The crew account joins the channel first if it is not in it yet.
-          </span>
+    <Panel labelledBy={headingId}>
+      <SectionHeader icon="wand" title="Summon an agent" id={headingId} />
+      <form onSubmit={submit} aria-busy={pending} style={styles.form}>
+        <div style={styles.fieldRow}>
+          <div style={styles.field}>
+            <label htmlFor={channelId} style={styles.label}>
+              Channel
+            </label>
+            <input id={channelId} name="channel" style={styles.input} value={channel} placeholder="#fix-bug" onChange={(e) => onChange("channel", e.target.value)} aria-describedby={hintId} required />
+          </div>
+          <div style={styles.field}>
+            <label htmlFor={agentId} style={styles.label}>
+              Agent (optional)
+            </label>
+            <input id={agentId} name="agent" style={styles.input} value={agent} placeholder="coder" onChange={(e) => onChange("agent", e.target.value)} />
+          </div>
         </div>
-        <div style={styles.field}>
-          <label htmlFor={agentId} style={styles.label}>
-            Agent (optional)
-          </label>
-          <input id={agentId} name="agent" style={styles.input} value={agent} placeholder="coder" onChange={(e) => onChange("agent", e.target.value)} />
-        </div>
+        <p id={hintId} style={{ ...styles.hint, margin: 0 }}>
+          The channel name must start with #. The crew account joins the channel first if it is not in it yet.
+        </p>
         {/* aria-disabled, not disabled: a disabled button drops focus to <body>. submit() ignores presses while pending. */}
-        <button type="submit" style={buttonStyle("primary", pending)} aria-disabled={pending}>
-          {pending ? "Summoning…" : "Summon"}
-        </button>
+        <div>
+          <Button type="submit" variant="primary" icon="wand" disabled={pending}>
+            {pending ? "Summoning…" : "Summon"}
+          </Button>
+        </div>
         {pending ? (
-          <p role="status" style={styles.hint}>
+          <p role="status" style={{ ...styles.hint, margin: 0 }}>
             Joining the channel if needed, then waiting for the agent to say it is ready. This can take up to 30 seconds.
           </p>
         ) : null}
         {message === null ? null : message.ok ? (
-          <p role="status" style={styles.text}>
+          <p role="status" style={{ ...styles.text, margin: 0 }}>
             {message.text}
           </p>
         ) : (
-          <p role="alert" style={{ ...styles.text, fontWeight: 600 }}>
+          <p role="alert" style={{ ...styles.text, margin: 0, fontWeight: 600 }}>
             Failed: {message.text}
           </p>
         )}
       </form>
-    </Card>
+    </Panel>
   );
 }

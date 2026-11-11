@@ -13,6 +13,37 @@ export const controlId = (channel: string, agent: string, mode: string): string 
 export const agentRowId = (channel: string, agent: string): string => `agent-${enc(channel)}-${enc(agent)}`;
 export const channelHeadingId = (channel: string): string => `channel-${enc(channel)}`;
 
+/** A Grant op button of one inbox item in one channel. */
+export const inboxGrantId = (inboxId: string, channel: string): string => `grant-${enc(inboxId)}-${enc(channel)}`;
+
+/** The id of the button that opens the dialog for `request`, so focus can go back to it on Cancel or Escape. */
+export function triggerIdFor(request: ConfirmRequest): string {
+  if (request.kind === "exorcise") return controlId(request.channel, request.agent, "x");
+  if (request.kind === "grant" && request.inboxId !== undefined) return inboxGrantId(request.inboxId, request.channel);
+  return controlId(request.channel, request.agent, request.mode);
+}
+
+/** Something that can tell whether a node is inside it (a DOM element). */
+export interface Container {
+  contains(other: unknown): boolean;
+}
+
+/** True when focus moved to `target` outside an open modal dialog, so the dialog must take it back. */
+export function focusEscaped(dialog: Container | null, target: unknown): boolean {
+  return dialog !== null && target !== null && target !== undefined && !dialog.contains(target);
+}
+
+/**
+ * Where focus goes when the dialog closes: the trigger button when it is still in the page, otherwise the element that
+ * had focus when the dialog opened if that is a real control (not a host container such as <main tabindex="-1">),
+ * otherwise null (the caller then uses its fallback heading).
+ */
+export function returnFocusTarget<T>(trigger: T | null, opener: T | null, usable: (el: T) => boolean): T | null {
+  if (trigger !== null && usable(trigger)) return trigger;
+  if (opener !== null && usable(opener)) return opener;
+  return null;
+}
+
 const INVERSE = { "+v": "-v", "-v": "+v", "+o": "-o", "-o": "+o" } as const;
 
 /**

@@ -67,6 +67,19 @@ Depends on `irc-bridge` (tasks 1 to 13) and `mcp-tools` (tasks 2 and 4: guard an
   - Manual: `kirocrew app dev seance-crew`, open `/apps/seance-crew`, summon in a fresh `#crew<n>` channel, grant `+v` then `+o`, exorcise, confirm credits update. Record results in the PR description (not in code).
   - _Requirements: 6.5, 7.1, 7.2, 7.3, 2.3_
 
+- [x] 13. Primitives, layout refresh and tests
+  - `ui/src/ui.tsx` (Panel, SectionHeader, Pill, Button, EmptyState, Skeleton, StatTile, Meter), `ui/src/Icon.tsx`, tokens and the scoped focus-ring rule in `ui/src/styles.ts`; `StatusBanner` slim line, `StatTiles`, two wrapping columns in `Dashboard`, denser `ChannelCard` (pills, meter, agent grid, commits with the "newest 5 of N" note, log grid), restyled `Inbox`, `SummonForm`, `SummaryCard`; every `buttonStyle()` caller moved to `Button`.
+  - Tests: tile values from a fixture state; meter aria values and its absence when the total is null; "active … ago"; empty states; skeletons while the state is null; every icon renders a decorative `svg`; no icon-only button without a name; hardening of the log grid, commit rows and topic `title`; new contrast pairs; bundle size and externals unchanged.
+  - Manual: screenshots at about 1400 px and 800 px wide from `kirocrew app dev seance-crew`; retake `docs/img/*.png`.
+  - Review fixes: `commitCount` in `/api/state` (backend test), live "updated … ago" outside the live region, meter clamp, label-in-name, tokens, contrast floor 4.7, summary date label with the live total, Channels panel, 3 + 3 tiles, primary grant confirm, log open by default.
+  - _Requirements: 8.1, 8.2, 8.3, 8.4, 8.5, 8.6, 8.7, 8.8, 8.9, 6.1, 6.2, 6.3_
+
+- [x] 14. App icon assets and manifest test
+  - `ui/icon.svg`, `ui/icon-inactive.svg`, `assets/icon.png` (512×512 from the SVG via `sips`), `app.json` page `iconUrl` and `iconInactiveUrl`.
+  - Tests in `backend/test/manifest.test.ts`: `iconPath` is a PNG (magic bytes, IHDR 512×512); both SVGs exist under `ui/`, start with `<svg`, and contain no `<script`, `href=` or `on…=`.
+  - Manual: the sidebar shows the candle, greyed when another page is active.
+  - _Requirements: 8.10_
+
 ## Notes
 
 - Depends on `irc-bridge` tasks 1 to 13 and on `mcp-tools` tasks 2 (guard) and 4 (validators). `GET /api/summary` uses the `SummaryProvider` that `steward-agent` task 6 wires in; task 4 uses a stub.
@@ -119,6 +132,13 @@ Depends on `irc-bridge` (tasks 1 to 13) and `mcp-tools` (tasks 2 and 4: guard an
       "id": 5,
       "tasks": [
         "12"
+      ]
+    },
+    {
+      "id": 6,
+      "tasks": [
+        "13",
+        "14"
       ]
     }
   ]

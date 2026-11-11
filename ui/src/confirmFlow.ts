@@ -45,6 +45,8 @@ export interface ConfirmCopy {
   readonly title: string;
   readonly body: string;
   readonly confirmLabel: string;
+  /** True for exorcise and revoke (danger style); false for a grant (primary style). */
+  readonly destructive: boolean;
 }
 
 const MODE_EFFECT: Record<"+v" | "-v" | "+o" | "-o", string> = {
@@ -64,12 +66,14 @@ export function confirmCopy(request: ConfirmRequest): ConfirmCopy {
           : `Grant ${request.mode} to ${request.agent} in ${request.channel}?`,
         body: MODE_EFFECT[request.mode],
         confirmLabel: `Apply ${request.mode} to ${request.agent} in ${request.channel}`,
+        destructive: request.mode.startsWith("-"),
       };
     case "exorcise":
       return {
         title: `Exorcise ${request.agent} from ${request.channel}?`,
         body: "The agent stops and uncommitted work in the worktree is reverted.",
         confirmLabel: `Exorcise ${request.agent} from ${request.channel}`,
+        destructive: true,
       };
   }
 }

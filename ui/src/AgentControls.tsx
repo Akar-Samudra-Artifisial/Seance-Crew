@@ -1,7 +1,8 @@
-import { cleanText, modeChangesFor, type ModeChange } from "./format.js";
 import { controlId } from "./focus.js";
-import { buttonStyle, styles } from "./styles.js";
+import { cleanText, modeChangesFor, type ModeChange } from "./format.js";
+import { styles } from "./styles.js";
 import type { AgentView } from "./types.js";
+import { Button } from "./ui.js";
 
 export interface AgentControlsProps {
   readonly agent: AgentView;
@@ -27,28 +28,29 @@ export function AgentControls({ agent, channel, onMode, onExorcise, busy = false
   return (
     <span style={styles.controls}>
       {modeChangesFor(agent.modes).map((mode) => (
-        <button
+        <Button
           key={mode}
           id={controlId(channel, agent.nick, mode)}
-          type="button"
-          style={buttonStyle("plain", busy)}
-          aria-disabled={busy}
+          size="sm"
+          icon={mode.startsWith("-") ? "minus" : "plus"}
+          disabled={busy}
           onClick={() => (busy ? undefined : onMode(agent, channel, mode))}
-          aria-label={`${verb(mode)} ${mode} ${preposition(mode)} ${nick} in ${where}`}
+          label={`${verb(mode)} ${mode} ${preposition(mode)} ${nick} in ${where}`}
         >
           {verb(mode)} {mode}
-        </button>
+        </Button>
       ))}
-      <button
+      <Button
         id={controlId(channel, agent.nick, "x")}
-        type="button"
-        style={buttonStyle("danger", busy)}
-        aria-disabled={busy}
+        variant="danger"
+        size="sm"
+        icon="x"
+        disabled={busy}
         onClick={() => (busy ? undefined : onExorcise(agent, channel))}
-        aria-label={`Exorcise ${nick} from ${where}`}
+        label={`Exorcise ${nick} from ${where}`}
       >
         Exorcise
-      </button>
+      </Button>
     </span>
   );
 }

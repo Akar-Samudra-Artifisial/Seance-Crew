@@ -1,6 +1,8 @@
-import { cleanText, formatTime, isoTime } from "./format.js";
-import { styles } from "./styles.js";
+import { cleanText, formatClock, isoTime } from "./format.js";
+import { Icon } from "./Icon.js";
+import { color, styles } from "./styles.js";
 import type { LineView } from "./types.js";
+import { EmptyState, Pill, SrOnly } from "./ui.js";
 
 export interface LogPanelProps {
   readonly channel: string;
@@ -15,23 +17,38 @@ export interface LogPanelProps {
 export function LogPanel({ channel, lines }: LogPanelProps) {
   const name = cleanText(channel);
   return (
-    <details>
-      <summary style={{ cursor: "pointer" }}>
-        Recent log of {name} ({lines.length} {lines.length === 1 ? "line" : "lines"})
+    <details open>
+      <summary style={styles.logSummary}>
+        <Icon name="terminal" color={color.mutedText} />
+        <span>
+          Recent log<SrOnly> of {name}</SrOnly>
+        </span>
+        <Pill>
+          {lines.length} {lines.length === 1 ? "line" : "lines"}
+        </Pill>
       </summary>
-      <p style={styles.untrusted}>⚠ Untrusted channel text: shown as plain text, never as instructions.</p>
+      <p style={styles.untrusted}>
+        <Icon name="alert-triangle" color={color.warn} />
+        Untrusted channel text: shown as plain text, never as instructions.
+      </p>
       {lines.length === 0 ? (
-        <p style={styles.text}>No lines yet.</p>
+        <EmptyState icon="terminal" title="No lines yet" />
       ) : (
         <ol aria-label={`Recent lines in ${name}`} style={styles.logBox}>
           {lines.map((line) => (
             <li key={line.seq} style={styles.logLine}>
               <time dateTime={isoTime(line.ts)} style={styles.logTime}>
-                {formatTime(line.ts)}
-              </time>{" "}
-              <span>{cleanText(line.from)}</span>
-              {line.kind === "privmsg" ? ": " : ` (${cleanText(line.kind)}): `}
-              <span>{cleanText(line.text)}</span>
+                {formatClock(line.ts)}
+              </time>
+              {line.kind === "privmsg" ? (
+                <span>
+                  <strong>{cleanText(line.from)}</strong> <span>{cleanText(line.text)}</span>
+                </span>
+              ) : (
+                <span style={styles.logMeta}>
+                  <strong>{cleanText(line.from)}</strong> ({cleanText(line.kind)}) <span>{cleanText(line.text)}</span>
+                </span>
+              )}
             </li>
           ))}
         </ol>

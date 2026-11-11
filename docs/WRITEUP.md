@@ -10,7 +10,8 @@ Everything goes through one Node backend process that keeps a single WebSocket c
 
 - MCP tools served at `/mcp` (eight): `list_channels`, `read`, `say`, `summon`, `grant_op`, `exorcise`, `whois`, `credits`.
 - Dashboard page at `/apps/seance-crew`:
-  - channel cards with topic, member count and credits used;
+  - a slim connection status line and an overview row (channels, agents ready, operators, needs op, total credits, commits);
+  - channel cards with topic, member count, last activity and a credits bar;
   - agent rows with modes (`+o`, `+v`), model and a Ready or Starting indicator;
   - latest commits per channel and a recent log with an untrusted-text warning;
   - a "Needs op" inbox that lists agents denied an action, with Grant op and Dismiss;

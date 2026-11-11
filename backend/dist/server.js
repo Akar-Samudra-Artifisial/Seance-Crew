@@ -654,6 +654,7 @@ function channelView(store, c) {
     count: c.namesLoaded ? c.members.size : c.count,
     credits: { used: c.credits.used, total: c.credits.total },
     agents,
+    commitCount: c.commits.length,
     commits: c.commits.slice(-STATE_COMMITS_PER_CHANNEL).map((k) => ({ agent: k.agent, sha: k.sha, files: k.files, ts: k.ts })),
     lines: c.ring.newest(STATE_LINES_PER_CHANNEL).map((l) => ({ seq: l.seq, ts: l.ts, from: l.from, kind: l.kind, text: l.text }))
   };

@@ -96,6 +96,39 @@ describe("app.json", () => {
   });
 });
 
+describe("app icon (dashboard-ui Requirement 8)", () => {
+  const app = manifest as unknown as { iconPath?: string; ui?: { pages?: Array<{ iconUrl?: string; iconInactiveUrl?: string }> } };
+
+  it("iconPath is a 512x512 PNG", () => {
+    expect(app.iconPath).toBe("assets/icon.png");
+    const file = path.join(root, app.iconPath ?? "");
+    expect(existsSync(file)).toBe(true);
+    const png = readFileSync(file);
+    expect([...png.subarray(0, 4)]).toEqual([0x89, 0x50, 0x4e, 0x47]);
+    // The first chunk is IHDR: width and height are big-endian uint32 at bytes 16 and 20.
+    expect(png.subarray(12, 16).toString("ascii")).toBe("IHDR");
+    expect(png.readUInt32BE(16)).toBe(512);
+    expect(png.readUInt32BE(20)).toBe(512);
+  });
+
+  it.each(["iconUrl", "iconInactiveUrl"] as const)("ui.pages[0].%s is a safe SVG under ui/", (key) => {
+    const rel = app.ui?.pages?.[0]?.[key];
+    expect(rel, key).toBeTruthy();
+    // Relative to ui/, no leading ui/ and no way out of it.
+    expect(rel).not.toMatch(/^(\/|ui\/|\.\.)/);
+    const file = path.join(root, "ui", rel ?? "");
+    expect(existsSync(file), file).toBe(true);
+    const svg = readFileSync(file, "utf8");
+    expect(svg.trimStart().startsWith("<svg")).toBe(true);
+    expect(svg).toContain('viewBox="0 0 16 16"');
+    expect(svg).not.toMatch(/<script/i);
+    expect(svg).not.toMatch(/href\s*=/i);
+    expect(svg).not.toMatch(/\son[a-z]+\s*=/i);
+    // No full-size background box: it would draw a box inside the sidebar row.
+    expect(svg).not.toMatch(/<rect[^>]*width="16"[^>]*height="16"/);
+  });
+});
+
 describe("agents/seance-steward.json", () => {
   it("has the name, a model, a description and a prompt", () => {
     expect(agent.name).toBe("seance-steward");

@@ -1,17 +1,20 @@
-import { PageHeader, StatCard } from "@kirocrew/app-sdk/ui";
+import { PageHeader } from "@kirocrew/app-sdk/ui";
 import { AgentControls } from "./AgentControls.js";
 import { ChannelCard } from "./ChannelCard.js";
 import { ConfirmDialog, FOCUS_FALLBACK_ID } from "./ConfirmDialog.js";
 import { confirmCopy, initialConfirm, type ConfirmState } from "./confirmFlow.js";
-import { formatCredits, type ModeChange } from "./format.js";
+import { triggerIdFor } from "./focus.js";
+import type { ModeChange } from "./format.js";
 import { Inbox } from "./Inbox.js";
 import { LiveRegion } from "./LiveRegion.js";
 import { NO_NOTICE, type Notice } from "./notice.js";
+import { StatTiles } from "./StatTiles.js";
 import { StatusBanner } from "./StatusBanner.js";
-import { styles } from "./styles.js";
+import { FOCUS_CSS, SCOPE_ATTR, styles } from "./styles.js";
 import { SummaryCard } from "./SummaryCard.js";
 import { SummonForm, type SummonMessage } from "./SummonForm.js";
 import type { AgentView, InboxView, PollStatus, State, Summary } from "./types.js";
+import { EmptyState, Panel, SectionHeader, Skeleton, SrOnly } from "./ui.js";
 
 /** Everything the page can do, as callbacks, so the page body stays free of hooks and renders to static markup. */
 export interface DashboardActions {
@@ -60,7 +63,12 @@ export interface DashboardProps {
   readonly notice?: Notice;
 }
 
-/** The page body. */
+export const CHANNEL_PLACEHOLDERS = 2;
+
+/**
+ * The page body: a slim status line, the overview tiles, then two columns that wrap on narrow widths: channels on the
+ * left, and on the right what needs action first (Needs op), then Summon and the daily summary.
+ */
 export function Dashboard({ state, summary, status, actions = IDLE_ACTIONS, announcement = NO_NOTICE, notice = NO_NOTICE }: DashboardProps) {
   const dialog = actions.confirm;
   const copy = dialog.phase === "idle" ? null : confirmCopy(dialog.request);
@@ -68,45 +76,54 @@ export function Dashboard({ state, summary, status, actions = IDLE_ACTIONS, anno
   const inFlight = dialog.phase === "submitting" ? dialog.request : null;
   const grantingId = inFlight?.kind === "grant" ? (inFlight.inboxId ?? null) : null;
   return (
-    <>
+    <div {...{ [SCOPE_ATTR]: "" }}>
+      <style>{FOCUS_CSS}</style>
       <PageHeader title="Séance Crew" subtitle="Channels, agents, credits and permission requests." />
       <main style={styles.page}>
         <LiveRegion announcement={announcement} notice={notice} />
         <StatusBanner bridge={state?.bridge ?? null} status={status} />
         {notice.text === "" ? null : <p style={styles.text}>{notice.text}</p>}
-        <section aria-label="Totals">
-          <StatCard label="Total credits" value={formatCredits(state?.totalCredits)} />
-        </section>
-        <SummaryCard summary={summary} />
-        <SummonForm {...actions.summon} />
-        {state === null ? null : <Inbox items={state.inbox} now={state.serverTime} grantingId={grantingId} {...actions.inbox} />}
-        <section aria-labelledby={FOCUS_FALLBACK_ID}>
-          <h2 id={FOCUS_FALLBACK_ID} tabIndex={-1} style={styles.heading}>
-            Channels
-          </h2>
-          {state === null ? (
-            <p style={styles.text}>Loading channels…</p>
-          ) : state.channels.length === 0 ? (
-            <p style={styles.text}>No channels yet. To start one, summon an agent into a channel whose name starts with # (for example #fix-bug).</p>
-          ) : (
-            state.channels.map((channel) => (
-              <ChannelCard
-                key={channel.name}
-                channel={channel}
-                agentControls={(agent, ch) => (
-                  <AgentControls
-                    agent={agent}
-                    channel={ch.name}
-                    onMode={actions.onMode}
-                    onExorcise={actions.onExorcise}
-                    busy={inFlight !== null && inFlight.channel === ch.name && inFlight.agent === agent.nick}
+        <StatTiles state={state} />
+        <div style={styles.columns}>
+          <div style={styles.mainColumn}>
+            <Panel labelledBy={FOCUS_FALLBACK_ID}>
+              <SectionHeader icon="hash" title="Channels" id={FOCUS_FALLBACK_ID} focusable count={state?.channels.length} />
+              {state === null ? (
+                <>
+                  <SrOnly>Loading channels…</SrOnly>
+                  {Array.from({ length: CHANNEL_PLACEHOLDERS }, (_, i) => (
+                    <Skeleton key={i} height="12rem" />
+                  ))}
+                </>
+              ) : state.channels.length === 0 ? (
+                <EmptyState icon="ghost" title="No channels yet" hint="Summon an agent into a channel whose name starts with #, e.g. #fix-bug" />
+              ) : (
+                state.channels.map((channel) => (
+                  <ChannelCard
+                    key={channel.name}
+                    channel={channel}
+                    now={state.serverTime}
+                    agentControls={(agent, ch) => (
+                      <AgentControls
+                        agent={agent}
+                        channel={ch.name}
+                        onMode={actions.onMode}
+                        onExorcise={actions.onExorcise}
+                        busy={inFlight !== null && inFlight.channel === ch.name && inFlight.agent === agent.nick}
+                      />
+                    )}
                   />
-                )}
-              />
-            ))
-          )}
-          {state?.truncated === true ? <p style={styles.hint}>Some older log lines were left out to keep the page fast.</p> : null}
-        </section>
+                ))
+              )}
+              {state?.truncated === true ? <p style={styles.hint}>Some older log lines were left out to keep the page fast.</p> : null}
+            </Panel>
+          </div>
+          <aside aria-label="Actions and summary" style={styles.aside}>
+            {state === null ? null : <Inbox items={state.inbox} now={state.serverTime} grantingId={grantingId} {...actions.inbox} />}
+            <SummonForm {...actions.summon} />
+            <SummaryCard summary={summary} liveTotal={state?.totalCredits} today={state === null ? undefined : new Date(state.serverTime).toISOString().slice(0, 10)} />
+          </aside>
+        </div>
       </main>
       {copy === null || dialog.phase === "idle" ? null : (
         <ConfirmDialog
@@ -117,8 +134,10 @@ export function Dashboard({ state, summary, status, actions = IDLE_ACTIONS, anno
           error={dialog.phase === "failed" ? dialog.message : null}
           onConfirm={actions.onConfirm}
           onCancel={actions.onCancel}
+          triggerId={triggerIdFor(dialog.request)}
+          destructive={copy.destructive}
         />
       )}
-    </>
+    </div>
   );
 }

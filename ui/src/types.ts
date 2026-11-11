@@ -33,6 +33,8 @@ export interface ChannelView {
   readonly count: number;
   readonly credits: { readonly used: number | null; readonly total: number | null };
   readonly agents: readonly AgentView[];
+  /** Every commit the backend keeps for the channel (up to 50); `commits` holds only the newest few. Absent from an older backend. */
+  readonly commitCount?: number;
   readonly commits: readonly CommitView[];
   readonly lines: readonly LineView[];
 }

@@ -2,7 +2,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { bannerStyle, buttonStyle, color, HOST_THEME, styles } from "../src/styles.js";
+import { bannerStyle, buttonStyle, color, HOST_THEME, pillStyle, styles } from "../src/styles.js";
 
 // The values read from the live host CSS. The test spells them out so a change to HOST_THEME cannot hide a failure.
 const HOST = {
@@ -58,11 +58,40 @@ const PAIRS: ReadonlyArray<{ readonly name: string; readonly fg: string; readonl
   { name: "danger button text on the danger red", fg: HOST.accentFg, bg: HOST.danger },
   { name: "dialog text on the dialog card", fg: HOST.cardFg, bg: HOST.card },
   { name: "input text on a card", fg: HOST.cardFg, bg: HOST.card },
+  // Layout refresh (dashboard-ui Requirement 8).
+  { name: "pill text (mode, ready, members, sha) on --bg-hover", fg: HOST.cardFg, bg: HOST.bgHover },
+  { name: "stat tile label (--muted) on a panel", fg: HOST.muted, bg: HOST.card },
+  { name: "stat tile value on a panel", fg: HOST.cardFg, bg: HOST.card },
+  { name: "ghost button text on a panel", fg: HOST.cardFg, bg: HOST.card },
+  { name: "secondary button text on --bg-hover", fg: HOST.cardFg, bg: HOST.bgHover },
+  { name: "status line text on the page background", fg: HOST.cardFg, bg: HOST.bg },
+  { name: "status line detail (--muted) on the page background", fg: HOST.muted, bg: HOST.bg },
+  { name: "empty state hint (--muted) on a panel", fg: HOST.muted, bg: HOST.card },
+  { name: "model name and commit age (--muted) on a panel", fg: HOST.muted, bg: HOST.card },
+  { name: "log timestamp and join/part lines (--muted) on the log box", fg: HOST.muted, bg: HOST.bg },
 ];
 
 describe("text contrast with the host theme values", () => {
   it.each(PAIRS)("$name is at least 4.5:1", ({ fg, bg }) => {
     expect(contrast(fg, bg)).toBeGreaterThanOrEqual(4.5);
+  });
+
+  // --muted on --bg-hover is only 4.52:1, too close to the limit for comfort, so no text uses that pair: muted text sits
+  // on the page background or a panel, and everything on a pill, button or banner surface is --card-fg.
+  it("keeps every muted-text pair at 4.7:1 or more, and keeps muted text off the --bg-hover surface", () => {
+    const mutedPairs = PAIRS.filter((p) => p.fg === HOST.muted);
+    expect(mutedPairs.length).toBeGreaterThan(3);
+    for (const p of mutedPairs) {
+      expect(p.bg, p.name).not.toBe(HOST.bgHover);
+      expect(contrast(p.fg, p.bg), p.name).toBeGreaterThanOrEqual(4.7);
+    }
+    expect(contrast(HOST.muted, HOST.bgHover)).toBeLessThan(4.7);
+    // The surfaces that use --bg-hover carry body text only.
+    expect(styles.badge.background).toBe(color.surface);
+    expect(styles.badge.color).toBe(color.cardFg);
+    expect(styles.skeleton.background).toBe(color.surface);
+    expect(bannerStyle("ok").color).toBe(color.cardFg);
+    for (const variant of ["secondary", "ghost"] as const) expect(buttonStyle(variant).color).toBe(color.cardFg);
   });
 
   it("uses the host values as the fallbacks, so a missing variable keeps the same pairs", () => {
@@ -83,8 +112,22 @@ describe("text contrast with the host theme values", () => {
     expect(styles.hint.color).toBe(color.mutedText);
     expect(styles.logTime.color).toBe(color.mutedText);
     expect(styles.untrusted.color).toBe(color.cardFg);
-    expect(buttonStyle("plain").background).toBe(color.surface);
-    expect(buttonStyle("plain").color).toBe(color.cardFg);
+    expect(buttonStyle("secondary").background).toBe(color.surface);
+    expect(buttonStyle("secondary").color).toBe(color.cardFg);
+    expect(buttonStyle("ghost").background).toBe("transparent");
+    expect(buttonStyle("ghost").color).toBe(color.cardFg);
+    for (const tone of ["neutral", "accent", "warn", "danger", "muted"] as const) {
+      // The tone is only the border: background and text stay the checked pill pair.
+      expect(pillStyle(tone).background).toBe(color.surface);
+      expect(pillStyle(tone).color).toBe(color.cardFg);
+    }
+    expect(styles.statLabel.color).toBe(color.mutedText);
+    expect(styles.emptyHint.color).toBe(color.mutedText);
+    expect(styles.panel.background).toBe(color.card);
+    expect(styles.panel.color).toBe(color.cardFg);
+    expect(styles.skeleton.background).toBe(color.surface);
+    expect(styles.meterTrack.background).toBe(color.surface);
+    expect(styles.meterFill.background).toBe(color.accent);
     expect(buttonStyle("primary").background).toBe(color.accent);
     expect(buttonStyle("primary").color).toBe(color.accentFg);
     expect(buttonStyle("danger").background).toBe(color.danger);

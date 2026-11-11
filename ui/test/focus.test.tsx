@@ -5,7 +5,19 @@ import { AgentControls } from "../src/AgentControls.js";
 import { ChannelCard } from "../src/ChannelCard.js";
 import type { ConfirmRequest, ConfirmState } from "../src/confirmFlow.js";
 import { Dashboard, IDLE_ACTIONS } from "../src/Dashboard.js";
-import { agentRowId, applyFocus, CHANNELS_HEADING_ID, channelHeadingId, controlId, focusCandidates, type FocusableDocument } from "../src/focus.js";
+import {
+  agentRowId,
+  applyFocus,
+  CHANNELS_HEADING_ID,
+  channelHeadingId,
+  controlId,
+  focusCandidates,
+  focusEscaped,
+  inboxGrantId,
+  returnFocusTarget,
+  triggerIdFor,
+  type FocusableDocument,
+} from "../src/focus.js";
 import { Inbox } from "../src/Inbox.js";
 import type { AgentView, ChannelView, InboxView, State } from "../src/types.js";
 
@@ -216,5 +228,76 @@ describe("triggers are aria-disabled while the request runs", () => {
     expect(grant(renderToStaticMarkup(<Inbox {...props} grantingId="i1" />))).toContain('aria-disabled="true"');
     expect(grant(renderToStaticMarkup(<Inbox {...props} grantingId={null} />))).toContain('aria-disabled="false"');
     expect(grant(renderToStaticMarkup(<Inbox {...props} />))).toContain('aria-disabled="false"');
+  });
+});
+
+describe("the inbox Grant op dialog behaves like the agent-row dialogs", () => {
+  const item: InboxView = { id: "i7", ts: 0, agent: "coder", channel: CH, candidates: [], action: "Creating NOTES.md" };
+
+  it("one Grant op click opens the dialog: the controller goes straight to confirming and the page renders the dialog", () => {
+    const states: ConfirmState[] = [];
+    const controller = createConfirmController({ api: { post: vi.fn() }, onState: (s) => states.push(s), onSuccess: noop, refresh: noop });
+    // The same wiring as App: Inbox onGrant -> controller.open.
+    const onGrant = (i: InboxView, ch: string) => controller.open({ kind: "grant", channel: ch, agent: i.agent, mode: "+o", inboxId: i.id });
+    onGrant(item, CH);
+    expect(states).toEqual([{ phase: "confirming", request: { kind: "grant", channel: CH, agent: "coder", mode: "+o", inboxId: "i7" } }]);
+    const html = renderToStaticMarkup(<Dashboard state={stateWith([agent("v")], [item])} summary={null} status={null} actions={{ ...IDLE_ACTIONS, confirm: states[0]! }} />);
+    expect(html).toContain('role="dialog"');
+    expect(html).toContain("Grant +o to coder in #fix-bug?");
+    // Cancel is the first focusable control of the dialog, the one that gets focus on open.
+    const dialog = html.slice(html.indexOf('role="dialog"'));
+    expect(/<button[^>]*>([^<]*)<\/button>/.exec(dialog)?.[1]).toBe("Cancel");
+  });
+
+  it("gives every inbox Grant op button an id, and that id is the dialog's trigger", () => {
+    const html = renderToStaticMarkup(<Inbox items={[item]} now={1_000} onGrant={noop} onDismiss={noop} pendingId={null} errors={{}} />);
+    const id = inboxGrantId("i7", CH);
+    expect(html).toMatch(new RegExp(`<button[^>]* id="${id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}"[^>]*aria-label="Grant op to coder in #fix-bug"`));
+    expect(triggerIdFor({ kind: "grant", channel: CH, agent: "coder", mode: "+o", inboxId: "i7" })).toBe(id);
+  });
+
+  it("an item with several candidate channels gets one distinct trigger id per channel", () => {
+    const multi: InboxView = { ...item, channel: null, candidates: ["#a", "#b"] };
+    const html = renderToStaticMarkup(<Inbox items={[multi]} now={1_000} onGrant={noop} onDismiss={noop} pendingId={null} errors={{}} />);
+    expect(idsIn(html)).toEqual(expect.arrayContaining([inboxGrantId("i7", "#a"), inboxGrantId("i7", "#b")]));
+  });
+
+  it("the agent-row triggers are the controls the page renders", () => {
+    const ids = idsIn(page([agent("v")]));
+    expect(ids).toContain(triggerIdFor({ kind: "mode", channel: CH, agent: "coder", mode: "+o" }));
+    expect(ids).toContain(triggerIdFor({ kind: "exorcise", channel: CH, agent: "coder" }));
+  });
+
+  it("the dialog passes its trigger id down from the page", () => {
+    const confirm: ConfirmState = { phase: "confirming", request: { kind: "grant", channel: CH, agent: "coder", mode: "+o", inboxId: "i7" } };
+    // Server render has no document, so the dialog is rendered in place and the trigger is in the same markup.
+    const html = renderToStaticMarkup(<Dashboard state={stateWith([agent("v")], [item])} summary={null} status={null} actions={{ ...IDLE_ACTIONS, confirm }} />);
+    expect(idsIn(html)).toContain(inboxGrantId("i7", CH));
+  });
+});
+
+describe("focus stays in the open dialog", () => {
+  const box = (...inside: unknown[]) => ({ contains: (other: unknown) => inside.includes(other) });
+  const cancel = { name: "cancel" };
+  const main = { name: "main#main-content" };
+
+  it("focus moving to the host <main> (or anything outside) counts as escaped, so Cancel takes it back", () => {
+    const dialog = box(cancel);
+    expect(focusEscaped(dialog, main)).toBe(true);
+    expect(focusEscaped(dialog, cancel)).toBe(false);
+  });
+
+  it("nothing to reclaim when the dialog is gone or there is no target", () => {
+    expect(focusEscaped(null, main)).toBe(false);
+    expect(focusEscaped(box(), null)).toBe(false);
+  });
+
+  it("on close, focus returns to the trigger, not to the host <main> that held focus when the dialog opened", () => {
+    const trigger = { name: "Grant op" };
+    const usable = (el: { name: string }) => el !== main;
+    expect(returnFocusTarget(trigger, main, usable)).toBe(trigger);
+    expect(returnFocusTarget(null, main, usable)).toBeNull(); // the caller falls back to the Channels heading
+    const opener = { name: "Give +o" };
+    expect(returnFocusTarget(null, opener, usable)).toBe(opener);
   });
 });

@@ -45,6 +45,8 @@ export interface StateChannel {
   readonly count: number;
   readonly credits: { readonly used: number | null; readonly total: number | null };
   readonly agents: readonly StateAgent[];
+  /** How many commits the store keeps for this channel (up to 50); `commits` holds only the newest few of them. */
+  readonly commitCount: number;
   commits: StateCommit[];
   /** Untrusted channel text. */
   lines: StateLine[];
@@ -90,6 +92,7 @@ function channelView(store: Store, c: Channel): StateChannel {
     count: c.namesLoaded ? c.members.size : c.count,
     credits: { used: c.credits.used, total: c.credits.total },
     agents,
+    commitCount: c.commits.length,
     commits: c.commits.slice(-STATE_COMMITS_PER_CHANNEL).map((k) => ({ agent: k.agent, sha: k.sha, files: k.files, ts: k.ts })),
     lines: c.ring.newest(STATE_LINES_PER_CHANNEL).map((l) => ({ seq: l.seq, ts: l.ts, from: l.from, kind: l.kind, text: l.text })),
   };

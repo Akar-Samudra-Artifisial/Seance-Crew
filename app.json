@@ -27,7 +27,9 @@
       {
         "route": "/apps/seance-crew",
         "label": "Séance Crew",
-        "icon": "Ghost"
+        "icon": "Ghost",
+        "iconUrl": "icon.svg",
+        "iconInactiveUrl": "icon-inactive.svg"
       }
     ]
   },

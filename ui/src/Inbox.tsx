@@ -1,9 +1,10 @@
-import { Card, CardTitle } from "@kirocrew/app-sdk/ui";
-import { useEffect, useRef, useState } from "react";
-import { cleanText, formatAge } from "./format.js";
-import { buttonStyle, styles } from "./styles.js";
-import { agedNow, AGE_TICK_MS, startTicker, type Anchor } from "./ticker.js";
+import { inboxGrantId } from "./focus.js";
+import { cleanText, formatAgo } from "./format.js";
+import { Icon } from "./Icon.js";
+import { color, styles } from "./styles.js";
 import type { InboxView } from "./types.js";
+import { useAgingNow } from "./useAging.js";
+import { Button, EmptyState, Panel, Pill, SectionHeader } from "./ui.js";
 
 export interface InboxProps {
   readonly items: readonly InboxView[];
@@ -20,22 +21,15 @@ export interface InboxProps {
   readonly grantingId?: string | null;
 }
 
-/** Server time that keeps moving between polls: re-rendered every 30 s, timer removed on unmount. */
-function useAgingNow(serverNow: number): number {
-  const anchor = useRef<Anchor>({ server: serverNow, local: Date.now() });
-  if (anchor.current.server !== serverNow) anchor.current = { server: serverNow, local: Date.now() };
-  const [, setTick] = useState(0);
-  useEffect(() => startTicker(AGE_TICK_MS, () => setTick((t) => t + 1)), []);
-  return agedNow(anchor.current, Date.now());
-}
+export const INBOX_HEADING_ID = "inbox-heading";
 
 export function Inbox({ items, now, onGrant, onDismiss, pendingId, errors, grantingId = null }: InboxProps) {
   const current = useAgingNow(now);
   return (
-    <Card>
-      <CardTitle>Needs op</CardTitle>
+    <Panel labelledBy={INBOX_HEADING_ID} style={items.length > 0 ? { borderColor: color.warn } : undefined}>
+      <SectionHeader icon="shield" title="Needs op" id={INBOX_HEADING_ID} count={items.length} />
       {items.length === 0 ? (
-        <p style={styles.text}>No open permission requests.</p>
+        <EmptyState icon="shield-check" title="No open requests" hint="An agent that is denied an action it needs op for shows up here." />
       ) : (
         <ul aria-label="Open permission requests" style={styles.list}>
           {items.map((item) => {
@@ -45,32 +39,44 @@ export function Inbox({ items, now, onGrant, onDismiss, pendingId, errors, grant
             const busy = pendingId === item.id;
             const granting = grantingId === item.id;
             return (
-              <li key={item.id} style={{ ...styles.row, flexDirection: "column", alignItems: "flex-start" }}>
-                <p style={styles.text}>
-                  <strong>{agent}</strong> in {where} was denied: {cleanText(item.action)}. Waiting {formatAge(current - item.ts)}.
-                </p>
+              <li key={item.id} style={styles.inboxItem}>
+                <div style={styles.inboxHead}>
+                  <Icon name="shield" color={color.warn} />
+                  <div style={styles.stack}>
+                    <p style={{ margin: 0, overflowWrap: "anywhere" }}>
+                      <strong>{agent}</strong> → <span>{cleanText(item.action)}</span>
+                    </p>
+                    <span style={styles.smallRow}>
+                      <Pill icon="hash">{where}</Pill>
+                      <span style={styles.muted}>was denied {formatAgo(current - item.ts)}</span>
+                    </span>
+                  </div>
+                </div>
                 <div style={styles.controls}>
                   {channels.map((channel) => (
-                    <button
+                    <Button
                       key={channel}
-                      type="button"
-                      style={buttonStyle("primary", granting)}
-                      aria-disabled={granting}
+                      id={inboxGrantId(item.id, channel)}
+                      variant="primary"
+                      size="sm"
+                      icon="shield-check"
+                      disabled={granting}
                       onClick={() => (granting ? undefined : onGrant(item, channel))}
-                      aria-label={`Grant op to ${agent} in ${cleanText(channel)}`}
+                      // The accessible name starts with the visible text (label in name), then adds the agent and channel.
+                      label={channels.length > 1 ? `Grant op in ${cleanText(channel)} to ${agent}` : `Grant op to ${agent} in ${cleanText(channel)}`}
                     >
                       Grant op{channels.length > 1 ? ` in ${cleanText(channel)}` : ""}
-                    </button>
+                    </Button>
                   ))}
-                  <button
-                    type="button"
-                    style={buttonStyle("plain", busy)}
-                    aria-disabled={busy}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={busy}
                     onClick={() => (busy ? undefined : onDismiss(item))}
-                    aria-label={`Dismiss the request from ${agent}${item.channel === null ? "" : ` in ${cleanText(item.channel)}`}`}
+                    label={`${busy ? "Dismissing… request" : "Dismiss the request"} from ${agent}${item.channel === null ? "" : ` in ${cleanText(item.channel)}`}`}
                   >
                     {busy ? "Dismissing…" : "Dismiss"}
-                  </button>
+                  </Button>
                 </div>
                 {errors[item.id] === undefined ? null : (
                   <p role="alert" style={styles.text}>
@@ -82,6 +88,6 @@ export function Inbox({ items, now, onGrant, onDismiss, pendingId, errors, grant
           })}
         </ul>
       )}
-    </Card>
+    </Panel>
   );
 }

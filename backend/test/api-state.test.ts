@@ -49,10 +49,20 @@ describe("buildState", () => {
     expect(ch?.count).toBe(3);
     expect(ch?.agents).toEqual([{ nick: "coder", modes: "v", model: "m1", ready: true }]);
     expect(ch?.commits.map((k) => k.sha)).toEqual(["sha2", "sha3", "sha4", "sha5", "sha6"]);
+    expect(ch?.commitCount).toBe(7); // every commit the store keeps, not only the 5 sent
     expect(ch?.lines.map((l) => l.text)).toEqual(["hello"]);
     expect(state.inbox).toHaveLength(1);
     expect(state.inbox[0]).toMatchObject({ channel: "#fix-bug", agent: "coder", action: "write" });
     expect(state.totalCredits).toBe(3);
+  });
+
+  it("counts up to the store limit of 50 commits while sending only 5", () => {
+    const store = makeStore();
+    const c = store.ensureChannel("#many");
+    for (let i = 0; i < 60; i++) store.addCommit(c, { agent: "coder", sha: `s${i}`, files: 1, ts: i });
+    const ch = buildState(store, bridge()).channels[0];
+    expect(ch?.commitCount).toBe(50);
+    expect(ch?.commits).toHaveLength(5);
   });
 
   it("reports credits as null when unknown", () => {

@@ -1,4 +1,6 @@
 // Small pure formatting helpers. Everything returns plain strings that components render as text nodes.
+import type { IconName } from "./Icon.js";
+import type { Tone } from "./styles.js";
 
 // C0 and C1 controls, DEL, and the bidi embedding/override/isolate controls (U+202A to U+202E, U+2066 to U+2069).
 const UNSAFE_TEXT = /[\u0000-\u001F\u007F-\u009F\u202A-\u202E\u2066-\u2069]/g;
@@ -37,21 +39,38 @@ export function formatAge(ms: number): string {
   return `${Math.floor(sec / 86_400)} d`;
 }
 
+/** "5 s ago", "3 min ago" for an elapsed number of milliseconds. */
+export function formatAgo(ms: number): string {
+  return `${formatAge(ms)} ago`;
+}
+
+/** Local 24-hour clock time for the log, "14:03:09". */
+export function formatClock(ts: number): string {
+  return new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
+}
+
+/** Local date and time, for `title` tooltips. */
+export function formatDateTime(ts: number): string {
+  return new Date(ts).toLocaleString();
+}
+
 export interface ModeLabel {
-  /** A glyph for sighted users; hidden from assistive technology. */
-  readonly icon: string;
+  /** An icon for sighted users; hidden from assistive technology. */
+  readonly icon: IconName;
   /** The text that carries the meaning, so colour is never the only signal. */
   readonly text: string;
+  /** Pill tone: +o accent border, +v neutral, none muted. */
+  readonly tone: Tone;
 }
 
 /** Modes as text and icon: "+o operator", "+v voice", both, or "no modes". */
 export function modeLabel(modes: string): ModeLabel {
   const hasO = modes.includes("o");
   const hasV = modes.includes("v");
-  if (hasO && hasV) return { icon: "◆", text: "+o +v operator, voice" };
-  if (hasO) return { icon: "◆", text: "+o operator" };
-  if (hasV) return { icon: "◇", text: "+v voice" };
-  return { icon: "○", text: "no modes" };
+  if (hasO && hasV) return { icon: "shield-check", text: "+o +v operator, voice", tone: "accent" };
+  if (hasO) return { icon: "shield-check", text: "+o operator", tone: "accent" };
+  if (hasV) return { icon: "shield", text: "+v voice", tone: "neutral" };
+  return { icon: "minus", text: "no modes", tone: "muted" };
 }
 
 export type ModeChange = "+v" | "-v" | "+o" | "-o";
