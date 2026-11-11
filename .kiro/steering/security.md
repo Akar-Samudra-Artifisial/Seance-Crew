@@ -40,6 +40,8 @@ The backend binds `127.0.0.1`, but any local process can open that socket, and a
 3. **`/api/*` only**: a valid `X-KiroCrew-Proxy` signature (scheme in `kirocrew.md`), otherwise 403. If `KIROCREW_PROXY_SECRET` is not set, `/api/*` returns 503.
 4. **`/mcp`**: no credential exists (the gateway sends none, see `kirocrew.md`).
 
+**`confirm` is set by the calling model, so it is not proof of human approval.** A prompt-injected model can set `confirm: true` as easily as an honest one. This is an accepted limitation: the steward skill must ask the human first, in the chat, before it sets `confirm`. Server-side limits reduce the damage of a misled model: `summon` needs `confirm: true` for any agent other than `coder` and allows 3 calls per channel per 10 minutes; `say` allows 20 lines per minute in total; the acting tools run one at a time per channel.
+
 **Accepted risk: any local process of the same user can call /mcp; destructive tools still need confirm:true.** `exorcise` and `grant_op` refuse without `confirm: true`, but `say` and `summon` do not need it. The README security section repeats this.
 
 `/health` is unauthenticated (the gateway health check sends no credentials) and returns only `{"ok":true}`.

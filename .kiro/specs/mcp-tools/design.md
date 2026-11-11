@@ -31,6 +31,15 @@ The MCP handler is a stateless HTTP layer on the backend's single `node:http` se
 
 `/health` is routed before the guard and returns `{"ok":true}` only.
 
+### Confirmation, limits and ordering (review fixes)
+
+- **`confirm` is not human approval.** The model sets it, so a prompt-injected model can too. This is an accepted limitation, written in `.kiro/steering/security.md`; the steward skill must ask the human first.
+- **Limits** (`src/mcp/guards.ts`, per `McpContext`, on the injected clock): `summon` needs `confirm: true` for any agent other than `coder` and is limited to 3 calls per channel per 10 minutes; `say` is limited to 20 lines per minute in total. Refusals are tool errors that state the limit and the wait. Calls that fail validation, lack a required `confirm` or hit the bridge state check do not use up the budget.
+- **Ordering:** `summon`, `grant_op` and `exorcise` run one at a time per channel (a promise chain per channel), so a numeric error reply, which names only the channel or the nick, cannot be attributed to a different call. Every waiter is removed in a `finally`, including when sending throws something other than a `LineError`.
+- **`grant_op` succeeds on the server's word:** it waits up to 5 seconds for the matching `MODE` (`<mode> <agent>` on that channel, event `mode`) or a `server-error` (482, 441, 403, 401). Only the `MODE` event is a success and, for `+o`, resolves the open inbox items; a numeric gives a tool error naming it; a timeout gives a tool error and leaves the inbox untouched.
+- **`exorcise` matches the agent:** the `session closed` notice names no agent, so it only counts together with a sign that this agent left the channel (a `KICK` line for it, or its `PART`), in either order. Without that sign the result is "kicked, session not confirmed".
+- **Transport:** a JSON-RPC response object from the client gets 202 without a body; a declared `Content-Length` above 64 KiB, or a streamed body that grows past it, gets 413 and the connection is closed; a batch holds at most 20 messages (-32600 above); the `credits` summary is wrapped like other server-derived text (`source="summary:summary" from="server"`); names, nicks and senders printed outside a wrapper are escaped with `escapeUntrusted`.
+
 Tests: wrong Host → 421; `Host: 127.0.0.1` without port → 421; matching Host passes; foreign `Origin` → 403; gateway `Origin` (including the `localhost` spelling) passes; `Origin: null` → 403; no `Origin` passes; the guard runs before body parsing (an oversized body with a bad Host gets 421, not 413).
 
 ## Components and Interfaces
@@ -54,9 +63,9 @@ All inputs use `additionalProperties: false`.
 | --- | --- | --- |
 | `list_channels` | `{}` | Reads store. |
 | `read` | `{ channel, since?: int ≥ 0, limit?: int 1..200 }` | Reads ring buffer. |
-| `say` | `{ channel, text: string 1..400 }` | `PRIVMSG`. |
-| `summon` | `{ channel, agent?: nick }` | `INVITE`, waits for `<agent> is ready`. |
-| `grant_op` | `{ channel, agent, mode: "+v"\|"-v"\|"+o"\|"-o", confirm: boolean }` | `MODE`, needs `confirm: true`. |
+| `say` | `{ channel, text: string 1..400 }` | `PRIVMSG`; 20 lines per minute in total. |
+| `summon` | `{ channel, agent?: nick, confirm?: boolean }` | `INVITE`, waits for `<agent> is ready`; `confirm: true` for any agent but `coder`; 3 per channel per 10 min. |
+| `grant_op` | `{ channel, agent, mode: "+v"\|"-v"\|"+o"\|"-o", confirm: boolean }` | `MODE`, needs `confirm: true`; waits for the server's `MODE` echo. |
 | `exorcise` | `{ channel, agent, reason?: string ≤ 200, confirm: boolean }` | `KICK`, needs `confirm: true`. |
 | `whois` | `{ nick }` | `WHOIS`, waits for `318`. |
 | `credits` | `{ channel?: string }` | Reads store. |

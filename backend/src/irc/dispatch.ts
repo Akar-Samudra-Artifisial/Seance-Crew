@@ -2,7 +2,7 @@
 import { irc_lower, isValidChannel, isValidNick, type IrcMessage } from "../../vendor/irc-protocol/src/index.js";
 import type { Logger } from "../log.js";
 import { parseNotice, type DeniedReason } from "./notices.js";
-import type { Store } from "./store.js";
+import type { Store, WhoisInfo } from "./store.js";
 
 /** Bounds on what a server can make the bridge remember. */
 export const MAX_CHANNELS = 500;
@@ -23,12 +23,29 @@ export interface Dispatcher {
 
 interface WhoisPending {
   nick: string;
+  user: string | null;
+  host: string | null;
+  channels: string[];
   model: string | undefined;
   tools: string[];
   credits: Array<{ channel: string; used: number; total: number }>;
   total: number | null;
+  idleSec: number | null;
   notFound: boolean;
 }
+
+const blankWhois = (nick: string, notFound = false): WhoisPending => ({
+  nick,
+  user: null,
+  host: null,
+  channels: [],
+  model: undefined,
+  tools: [],
+  credits: [],
+  total: null,
+  idleSec: null,
+  notFound,
+});
 
 const KNOWN_IGNORED = new Set([
   "001", "002", "003", "004", "005", "251", "252", "253", "254", "255", "265", "266", "372", "375", "376", "312", "317", "319",
@@ -191,6 +208,7 @@ export function createDispatcher(store: Store, hooks: DispatchHooks = {}, logger
     const args = message.params.slice(2);
     let sign = "+";
     let argIndex = 0;
+    const changes: Array<{ mode: string; arg: string }> = [];
     for (const letter of modeString) {
       if (letter === "+" || letter === "-") {
         sign = letter;
@@ -199,6 +217,7 @@ export function createDispatcher(store: Store, hooks: DispatchHooks = {}, logger
       const takesParam = MODE_WITH_PARAM_ALWAYS.has(letter) || (sign === "+" && MODE_WITH_PARAM_ON_SET.has(letter));
       const arg = takesParam ? args[argIndex++] : undefined;
       if ((letter === "o" || letter === "v" || letter === "h") && arg !== undefined) {
+        changes.push({ mode: `${sign}${letter}`, arg });
         const member = channel.members.get(irc_lower(arg));
         if (member !== undefined) {
           member.modes = sign === "+" ? (member.modes.includes(letter) ? member.modes : member.modes + letter) : member.modes.replaceAll(letter, "");
@@ -208,20 +227,35 @@ export function createDispatcher(store: Store, hooks: DispatchHooks = {}, logger
         }
       }
     }
-    store.addLine(target, nickOfPrefix(message.prefix) || "server", "mode", `${modeString} ${args.join(" ")}`.trim());
+    const by = nickOfPrefix(message.prefix) || "server";
+    store.addLine(target, by, "mode", `${modeString} ${args.join(" ")}`.trim());
+    if (changes.length > 0) store.emit({ type: "mode", channel: channel.name, by, changes });
   };
 
   const finishWhois = (nick: string): void => {
     const pending = whoisPending.get(irc_lower(nick));
     whoisPending.delete(irc_lower(nick));
-    if (pending === undefined || pending.notFound || pending.model === undefined) {
+    const found = pending !== undefined && !pending.notFound;
+    const info: WhoisInfo | undefined = found
+      ? {
+          nick: pending.nick,
+          user: pending.user,
+          host: pending.host,
+          channels: pending.channels,
+          model: pending.model ?? null,
+          tools: pending.tools,
+          credits: pending.credits,
+          totalCredits: pending.total,
+          idleSec: pending.idleSec,
+        }
+      : undefined;
+    if (!found || pending.model === undefined) {
       store.clearAgent(nick);
-      store.emit({ type: "whois-done", nick, found: pending !== undefined && !pending.notFound });
-      return;
+    } else {
+      store.setAgent({ nick: pending.nick, model: pending.model, tools: pending.tools, totalCredits: pending.total });
+      for (const c of pending.credits) store.setCreditsFromWhois(c.channel, c.used, c.total);
     }
-    store.setAgent({ nick: pending.nick, model: pending.model, tools: pending.tools, totalCredits: pending.total });
-    for (const c of pending.credits) store.setCreditsFromWhois(c.channel, c.used, c.total);
-    store.emit({ type: "whois-done", nick, found: true });
+    store.emit({ type: "whois-done", nick, found, ...(info === undefined ? {} : { info }) });
   };
 
   const handle = (message: IrcMessage): void => {
@@ -278,12 +312,29 @@ export function createDispatcher(store: Store, hooks: DispatchHooks = {}, logger
         if (!isValidNick(nick)) break;
         // A new 311 starts a fresh record, even when an old one is still pending.
         whoisPending.delete(irc_lower(nick));
-        whoisFor(nick, () => ({ nick, model: undefined, tools: [], credits: [], total: null, notFound: false }));
+        const fresh = whoisFor(nick, () => blankWhois(nick));
+        if (fresh !== undefined) {
+          fresh.user = p[2] ?? null;
+          fresh.host = p[3] ?? null;
+        }
+        break;
+      }
+      case "319": {
+        const nick = p[1] ?? "";
+        const pending = whoisFor(nick, () => blankWhois(nick));
+        if (pending !== undefined) pending.channels.push(...(p[2] ?? "").split(" ").filter((c) => c !== ""));
+        break;
+      }
+      case "317": {
+        const nick = p[1] ?? "";
+        const pending = whoisFor(nick, () => blankWhois(nick));
+        const idle = Number(p[2] ?? "");
+        if (pending !== undefined && Number.isFinite(idle) && p[2] !== undefined && p[2] !== "") pending.idleSec = idle;
         break;
       }
       case "320": {
         const nick = p[1] ?? "";
-        const pending = whoisFor(nick, () => ({ nick, model: undefined, tools: [], credits: [], total: null, notFound: false }));
+        const pending = whoisFor(nick, () => blankWhois(nick));
         if (pending === undefined) break;
         const text = p[2] ?? "";
         if (text.startsWith("model:")) pending.model = text.slice("model:".length).trim();
@@ -299,10 +350,24 @@ export function createDispatcher(store: Store, hooks: DispatchHooks = {}, logger
       }
       case "401": {
         const nick = p[1] ?? "";
-        const pending = whoisFor(nick, () => ({ nick, model: undefined, tools: [], credits: [], total: null, notFound: true }));
+        const pending = whoisFor(nick, () => blankWhois(nick, true));
         if (pending !== undefined) pending.notFound = true;
+        store.emit({ type: "server-error", numeric: "401", target: nick, text: p[2] ?? "" });
         break;
       }
+      case "403":
+      case "404":
+      case "441":
+      case "442":
+      case "443":
+      case "461":
+      case "472":
+      case "473":
+      case "481":
+      case "482":
+        // Replies to commands we sent (INVITE, MODE, KICK, PRIVMSG); tools waiting on an outcome listen for them.
+        store.emit({ type: "server-error", numeric: message.command, target: p[1] ?? "", text: p[p.length - 1] ?? "" });
+        break;
       case "318":
         if (isValidNick(p[1] ?? "")) finishWhois(p[1] ?? "");
         break;

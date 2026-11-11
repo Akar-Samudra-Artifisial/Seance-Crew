@@ -19,8 +19,10 @@
 // logs in as SEANCE_E2E_ANCHOR_NICK / SEANCE_E2E_ANCHOR_SECRET, JOINs a fresh #crew<n> and stays there until the
 // bundle has exited (the rebuild then finds at least one channel). Phase 2 is skipped with a message when the
 // anchor variables are missing, and fails when the anchor nick equals SEANCE_E2E_NICK. It checks: /health,
-// registration, state rebuild (at least one channel), SIGTERM (exit 0, lock file gone) and no secret in the
-// process output. /health is deliberately minimal, so the bridge state is read from the
+// registration, state rebuild (at least one channel), the live /mcp endpoint (initialize, the 8 tools, list_channels
+// and read on the anchor channel, exorcise refused without confirm and no KICK sent, foreign Host -> 421, foreign
+// Origin -> 403; no agent is summoned, so no Kiro credits are used), SIGTERM (exit 0, lock file gone) and no secret
+// in the process output. /health is deliberately minimal, so the bridge state is read from the
 // bundle's own log lines ("bridge state", "state rebuild finished"). SEANCE_E2E_ONLY=ws|bundle runs one phase.
 
 import { spawn } from "node:child_process";
@@ -254,6 +256,84 @@ function startStubGateway(configFile) {
   });
 }
 
+const EXPECTED_TOOLS = ["list_channels", "read", "say", "summon", "grant_op", "exorcise", "whois", "credits"];
+
+/** POST one JSON-RPC message to the bundle's /mcp. node:http is used because fetch cannot set the Host header. */
+function mcpPost(port, message, headers = {}) {
+  return new Promise((resolve, reject) => {
+    const text = JSON.stringify(message);
+    const req = http.request(
+      {
+        host: "127.0.0.1",
+        port,
+        method: "POST",
+        path: "/mcp",
+        headers: { Host: `127.0.0.1:${port}`, "Content-Type": "application/json", "Content-Length": Buffer.byteLength(text), ...headers },
+      },
+      (res) => {
+        const chunks = [];
+        res.on("data", (c) => chunks.push(c));
+        res.on("end", () => {
+          const body = Buffer.concat(chunks).toString("utf8");
+          let json;
+          try {
+            json = body === "" ? undefined : JSON.parse(body);
+          } catch {
+            json = undefined;
+          }
+          resolve({ status: res.statusCode ?? 0, json });
+        });
+      },
+    );
+    req.on("error", reject);
+    req.setTimeout(15_000, () => req.destroy(new Error("the /mcp request timed out")));
+    req.end(text);
+  });
+}
+
+/** The live /mcp check: no agent is summoned, so no Kiro credits are used. */
+async function checkMcp(port, anchorChannel, records) {
+  let nextId = 1;
+  const rpc = (method, params, headers) => mcpPost(port, { jsonrpc: "2.0", id: nextId++, method, ...(params === undefined ? {} : { params }) }, headers);
+  const need = (condition, message) => {
+    if (!condition) throw new Error(`mcp: ${message}`);
+  };
+
+  const init = await rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "e2e", version: "0" } });
+  need(init.status === 200 && init.json?.result?.serverInfo?.name === "seance-crew", "initialize did not return serverInfo");
+  log("mcp: initialize ok");
+
+  const list = await rpc("tools/list");
+  const names = (list.json?.result?.tools ?? []).map((t) => t.name);
+  need(JSON.stringify(names) === JSON.stringify(EXPECTED_TOOLS), `tools/list returned ${names.length} tools, expected exactly the 8 in order`);
+  log("mcp: tools/list returns the 8 tools");
+
+  const channels = await rpc("tools/call", { name: "list_channels", arguments: {} });
+  const known = (channels.json?.result?.structuredContent?.channels ?? []).map((c) => String(c.name).toLowerCase());
+  need(channels.json?.result?.isError !== true && known.includes(anchorChannel.toLowerCase()), "list_channels does not contain the anchor channel");
+  log("mcp: list_channels contains the anchor channel");
+
+  const read = await rpc("tools/call", { name: "read", arguments: { channel: anchorChannel } });
+  need(read.status === 200 && read.json?.result !== undefined && read.json.result.isError !== true, "read on the anchor channel returned an error");
+  log("mcp: read on the anchor channel ok");
+
+  const kicksBefore = records.filter((r) => typeof r.msg === "string" && r.msg.startsWith("-> KICK")).length;
+  const exorcise = await rpc("tools/call", { name: "exorcise", arguments: { channel: anchorChannel, agent: "coder" } });
+  need(exorcise.json?.result?.isError === true && /confirm: true is required/.test(exorcise.json.result.content?.[0]?.text ?? ""), "exorcise without confirm was not refused");
+  await sleep(500); // let any (wrong) line reach the debug trace
+  const kicksAfter = records.filter((r) => typeof r.msg === "string" && r.msg.startsWith("-> KICK")).length;
+  need(kicksAfter === kicksBefore, "a KICK line was sent without confirm");
+  log("mcp: exorcise without confirm refused, no KICK sent");
+
+  const badHost = await rpc("ping", undefined, { Host: "evil.example" });
+  need(badHost.status === 421, `a foreign Host got HTTP ${badHost.status}, expected 421`);
+  log("mcp: foreign Host answered 421");
+
+  const badOrigin = await rpc("ping", undefined, { Origin: "https://evil.example" });
+  need(badOrigin.status === 403, `a foreign Origin got HTTP ${badOrigin.status}, expected 403`);
+  log("mcp: foreign Origin answered 403");
+}
+
 /**
  * A second raw connection with the same credentials that JOINs a fresh #crew<n> channel and stays in it, so the
  * server has at least one channel for the bundle's LIST. Returns { channel, close }.
@@ -376,6 +456,8 @@ async function runBundle() {
       KIROCREW_GATEWAY_ORIGIN: `http://127.0.0.1:${gateway.port}`,
       KIROCREW_PROXY_SECRET: STUB_PROXY_SECRET,
       KIROCREW_SANDBOX_ACTIVE: "1",
+      // The debug trace lets the MCP check prove that no KICK line was sent. PASS is redacted at every level.
+      SEANCE_CREW_LOG_LEVEL: "debug",
     };
     child = spawn(process.execPath, [path.join(appDir, "backend", "dist", "server.js")], { cwd: appDir, env, stdio: ["ignore", "pipe", "pipe"] });
     const exited = new Promise((resolve) => child.once("exit", (code, signal) => resolve({ code, signal })));
@@ -435,6 +517,8 @@ async function runBundle() {
       throw new Error(`the rebuild found ${String(finished.channels)} channels, expected at least 1`);
     }
     log(`bundle: rebuild finished with ${finished.channels} channel(s)`);
+
+    await checkMcp(port, anchor.channel, records);
 
     child.kill("SIGTERM");
     const result = await Promise.race([exited, sleep(BUNDLE_TIMEOUT_MS.exit).then(() => undefined)]);

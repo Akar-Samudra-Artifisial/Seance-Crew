@@ -10,6 +10,9 @@ import { createIrcBridge, type Rebuilder } from "./irc/rebuild.js";
 import { Store } from "./irc/store.js";
 import { acquireLock, type Lock, type LockDeps } from "./lock.js";
 import type { Logger } from "./log.js";
+import { createMcpRoute } from "./mcp/handler.js";
+import { createToolRegistry } from "./mcp/tools.js";
+import type { SummaryProvider } from "./mcp/types.js";
 import { ensureDataDir, type AppPaths } from "./paths.js";
 
 export const SWEEP_INTERVAL_MS = 60_000;
@@ -25,6 +28,8 @@ export interface AppDeps {
   readonly createSocket?: SocketFactory;
   readonly lockDeps?: LockDeps;
   readonly routes?: readonly Route[];
+  /** Daily summary for the `credits` tool (wired by steward-agent). */
+  readonly summary?: SummaryProvider;
   readonly random?: () => number;
 }
 
@@ -61,10 +66,15 @@ export async function startApp(deps: AppDeps): Promise<RunningApp> {
 
   // One info line per state change (no credentials in it); /health itself never carries the state.
   store.on("state", (event) => logger.info("bridge state", { state: event.state }));
-  const server = createHttpServer({ logger, ...(deps.routes === undefined ? {} : { routes: deps.routes }) });
+  // /mcp needs the live port for its Host check, which is known only after listen.
+  let listenPort = 0;
+  const registry = createToolRegistry({ store, bridge, clock, logger, ...(deps.summary === undefined ? {} : { summary: deps.summary }) });
+  const mcpRoute = createMcpRoute({ port: () => listenPort, gatewayOrigin: deps.env["KIROCREW_GATEWAY_ORIGIN"], registry, logger });
+  const server = createHttpServer({ logger, routes: [mcpRoute, ...(deps.routes ?? [])] });
   let port: number;
   try {
     port = await listen(server, deps.port);
+    listenPort = port;
   } catch (err) {
     // The process is about to fail: do not leave a lock behind that blocks the next start.
     lock?.release();

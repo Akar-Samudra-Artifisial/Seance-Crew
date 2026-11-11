@@ -26,7 +26,9 @@ The backend serves a Streamable HTTP MCP endpoint at `/mcp` so Kiro Crew agents 
 5. THE backend SHALL answer with `Content-Type: application/json` and SHALL NOT require sessions (stateless); `GET /mcp` and `DELETE /mcp` SHALL return HTTP 405.
 6. THE backend SHALL accept request bodies up to 64 KiB and answer HTTP 413 above that.
 7. THE backend SHALL apply the local-caller guard of Requirement 8 to every `/mcp` request before reading the body.
-8. THE backend SHALL accept batch arrays by answering each element, and SHALL answer HTTP 202 when a batch has only notifications.
+8. THE backend SHALL accept batch arrays of at most 20 messages by answering each element (JSON-RPC error `-32600` above 20), and SHALL answer HTTP 202 when a batch has only notifications or client responses.
+9. WHEN the client sends a JSON-RPC response object (it has `result` or `error` and no `method`), THE backend SHALL answer HTTP 202 with no body.
+10. WHEN a request declares a `Content-Length` above 64 KiB, or its body grows past 64 KiB while streaming, THE backend SHALL answer HTTP 413 and close the connection.
 
 ### Requirement 2: Tool catalog
 
@@ -69,13 +71,13 @@ The backend serves a Streamable HTTP MCP endpoint at `/mcp` so Kiro Crew agents 
 
 #### Acceptance Criteria
 
-1. WHEN `say` is called with `channel` and `text` (1 to 400 characters), THE backend SHALL send `PRIVMSG <channel> :<text>` and return `{ sent: true }`.
-2. WHEN `summon` is called with `channel` and optional `agent` (default `coder`), THE backend SHALL send `INVITE <agent> <channel>`, wait up to 20 seconds for `<agent> is ready` in that channel, and return `{ ready: true }` or `{ ready: false, waitedSec }` without treating a timeout as an error.
+1. WHEN `say` is called with `channel` and `text` (1 to 400 characters), THE backend SHALL send `PRIVMSG <channel> :<text>` and return `{ sent: true }`; IF more than 20 `say` lines were sent in the last minute, THEN it SHALL return `isError: true` explaining the limit.
+2. WHEN `summon` is called with `channel` and optional `agent` (default `coder`; any other agent needs `confirm: true`; at most 3 calls per channel per 10 minutes, else `isError: true` explaining the limit), THE backend SHALL send `INVITE <agent> <channel>`, wait up to 20 seconds for `<agent> is ready` in that channel, and return `{ ready: true }` or `{ ready: false, waitedSec }` without treating a timeout as an error.
 3. IF `INVITE` is refused with numeric `482` or `473`, THEN `summon` SHALL return `isError: true` explaining that the account may not be allowed to invite (check `SEANCE_INVITERS` on the server).
 4. WHEN `grant_op` is called with `channel`, `agent`, `mode` (one of `+v`, `-v`, `+o`, `-o`) and `confirm`, THE backend SHALL send `MODE <channel> <mode> <agent>` only if `confirm === true`.
-5. WHEN `exorcise` is called with `channel`, `agent`, optional `reason` (at most 200 characters, default `exorcised by seance-crew`) and `confirm`, THE backend SHALL send `KICK <channel> <agent> :<reason>` only if `confirm === true`, and SHALL wait up to 10 seconds for the `session closed` or `session cancelled` notice.
+5. WHEN `exorcise` is called with `channel`, `agent`, optional `reason` (at most 200 characters, default `exorcised by seance-crew`) and `confirm`, THE backend SHALL send `KICK <channel> <agent> :<reason>` only if `confirm === true`, and SHALL wait up to 10 seconds for the `session closed` or `session cancelled` notice together with a sign that this agent left the channel (a `KICK` line for it, or its `PART`).
 6. IF `confirm` is absent, false or not a boolean for `grant_op` or `exorcise`, THEN THE backend SHALL return `isError: true` with a message saying that `confirm: true` is required after the human agrees, and SHALL NOT send anything.
-7. WHEN a `grant_op` with `+o` succeeds, THE backend SHALL mark open inbox items for that channel and agent as `granted`.
+7. THE backend SHALL treat a `grant_op` as successful only when the server's matching `MODE` (`<mode> <agent>` on that channel) arrives within 5 seconds; a numeric 482, 441, 403 or 401 for the call, or the timeout, SHALL give `isError: true` (naming the numeric), and WHEN a `+o` succeeds THE backend SHALL mark open inbox items for that channel and agent as `granted`, and otherwise leave them open.
 8. IF the bridge is not `registered`, THEN every acting tool SHALL return `isError: true` stating the bridge state.
 9. THE acting tools SHALL go through the bridge send queue and its line validation.
 

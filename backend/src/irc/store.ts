@@ -75,6 +75,20 @@ export interface Member {
   modes: string;
 }
 
+/** Everything a finished WHOIS reply said about a nick. All values are untrusted server data. */
+export interface WhoisInfo {
+  readonly nick: string;
+  readonly user: string | null;
+  readonly host: string | null;
+  readonly channels: readonly string[];
+  /** From the `320 model:` line; null for a plain user. */
+  readonly model: string | null;
+  readonly tools: readonly string[];
+  readonly credits: ReadonlyArray<{ readonly channel: string; readonly used: number; readonly total: number }>;
+  readonly totalCredits: number | null;
+  readonly idleSec: number | null;
+}
+
 export type BridgeEvent =
   | { readonly type: "state"; readonly state: BridgeState }
   | { readonly type: "line"; readonly channel: string; readonly line: ChannelLine }
@@ -86,7 +100,11 @@ export type BridgeEvent =
   | { readonly type: "commit"; readonly channel: string; readonly agent: string; readonly sha: string; readonly files: number }
   | { readonly type: "credits"; readonly channel: string; readonly used: number; readonly total: number }
   | { readonly type: "needs-op"; readonly item: InboxItem }
-  | { readonly type: "whois-done"; readonly nick: string; readonly found: boolean }
+  | { readonly type: "whois-done"; readonly nick: string; readonly found: boolean; readonly info?: WhoisInfo }
+  /** A channel MODE line from the server; `changes` lists the member modes it set or removed (for example "+o" on "coder"). */
+  | { readonly type: "mode"; readonly channel: string; readonly by: string; readonly changes: ReadonlyArray<{ readonly mode: string; readonly arg: string }> }
+  /** A numeric error reply (for example 482 or 473) to something we sent; `text` is untrusted server text. */
+  | { readonly type: "server-error"; readonly numeric: string; readonly target: string; readonly text: string }
   | { readonly type: "list-done" }
   | { readonly type: "names-done"; readonly channel: string };
 
@@ -142,6 +160,11 @@ export class Store {
     return () => {
       set.delete(handler as (event: never) => void);
     };
+  }
+
+  /** Number of handlers registered through `on` for a type, plus all `onAny` handlers (tests check that waiters clean up). */
+  listenerCount(type: EventType): number {
+    return (this.handlers.get(type)?.size ?? 0) + this.anyHandlers.size;
   }
 
   onAny(handler: (event: BridgeEvent) => void): () => void {
