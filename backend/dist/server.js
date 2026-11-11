@@ -336,7 +336,7 @@ function isServiceNick(nick2) {
 // backend/src/mcp/validate.ts
 var ok = (value) => ({ ok: true, value });
 var fail2 = (error) => ({ ok: false, error });
-var CONTROL = /[\r\n\0]/;
+var CONTROL = /[\x00-\x1f\x7f]/;
 var preview = (v) => {
   const text = typeof v === "string" ? v : JSON.stringify(v) ?? String(v);
   const cut = text.length > 40 ? `${text.slice(0, 40)}...` : text;
@@ -348,7 +348,7 @@ function string(options = {}) {
     optional: false,
     check(value, name) {
       if (typeof value !== "string") return fail2(`${name}: must be a string`);
-      if (CONTROL.test(value)) return fail2(`${name}: must not contain CR, LF or NUL`);
+      if (CONTROL.test(value)) return fail2(`${name}: must not contain control characters (C0 or DEL)`);
       const length = [...value].length;
       if (length < min) return fail2(`${name}: must be at least ${min} character${min === 1 ? "" : "s"} long`);
       if (options.max !== void 0 && length > options.max) return fail2(`${name}: must be at most ${options.max} characters long`);

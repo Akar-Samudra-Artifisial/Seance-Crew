@@ -18,7 +18,8 @@ export interface Field<T, Opt extends boolean = false> {
 const ok = <T>(value: T): Result<T> => ({ ok: true, value });
 const fail = (error: string): Result<never> => ({ ok: false, error });
 
-const CONTROL = /[\r\n\0]/;
+/** Every C0 control (U+0000 to U+001F, which includes CR, LF, NUL, TAB and ESC) and DEL (U+007F). */
+const CONTROL = /[\x00-\x1f\x7f]/;
 
 /** A short, printable form of a rejected value for error messages (never the whole input). */
 const preview = (v: unknown): string => {
@@ -33,14 +34,14 @@ export interface StringOptions {
   readonly description?: string;
 }
 
-/** A string of `min..max` characters (code points) with no CR, LF or NUL. */
+/** A string of `min..max` characters (code points) with no C0 control character and no DEL. */
 export function string(options: StringOptions = {}): Field<string> {
   const min = options.min ?? 0;
   return {
     optional: false,
     check(value, name) {
       if (typeof value !== "string") return fail(`${name}: must be a string`);
-      if (CONTROL.test(value)) return fail(`${name}: must not contain CR, LF or NUL`);
+      if (CONTROL.test(value)) return fail(`${name}: must not contain control characters (C0 or DEL)`);
       const length = [...value].length;
       if (length < min) return fail(`${name}: must be at least ${min} character${min === 1 ? "" : "s"} long`);
       if (options.max !== undefined && length > options.max) return fail(`${name}: must be at most ${options.max} characters long`);

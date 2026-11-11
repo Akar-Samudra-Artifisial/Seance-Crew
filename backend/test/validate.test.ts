@@ -17,8 +17,32 @@ describe("string", () => {
     expect(errorOf(f.check(5, "text"))).toMatch(/^text: must be a string/);
     expect(errorOf(f.check(undefined, "text"))).toMatch(/^text:/);
   });
-  it.each(["a\rb", "a\nb", "a\u0000b"])("rejects CR, LF and NUL (%j)", (value) => {
-    expect(errorOf(string().check(value, "text"))).toMatch(/CR, LF or NUL/);
+  it.each(["a\rb", "a\nb", "a\u0000b", "a\tb", "a\u001bb", "a\u007fb"])("rejects CR, LF, NUL, TAB, ESC and DEL (%j)", (value) => {
+    expect(errorOf(string().check(value, "text"))).toMatch(/^text: must not contain control characters/);
+  });
+  it("rejects every C0 control character and DEL, one by one, at the start, middle and end", () => {
+    const controls = [...Array.from({ length: 0x20 }, (_, i) => i), 0x7f].map((code) => String.fromCharCode(code));
+    expect(controls).toHaveLength(33);
+    for (const c of controls) {
+      for (const value of [`${c}x`, `x${c}x`, `x${c}`, c]) {
+        expect(string().check(value, "text").ok, JSON.stringify(value)).toBe(false);
+      }
+    }
+  });
+  it("still accepts printable text, spaces, accents, emoji and the C1 range (not C0 or DEL)", () => {
+    for (const ok of ["plain text", "a b  c", "Séance ✔ 日本語 😀", "~ is 0x7e", "x\u0080y"]) {
+      expect(string().check(ok, "text").ok, ok).toBe(true);
+    }
+  });
+  it("property: a string is accepted exactly when it has no C0 control and no DEL", () => {
+    fc.assert(
+      fc.property(fc.string({ unit: "binary", maxLength: 40 }), (value) => {
+        expect(string().check(value, "text").ok).toBe(!/[\x00-\x1f\x7f]/.test(value));
+      }),
+    );
+  });
+  it("applies to the tools' free text: say refuses a TAB before anything is sent", () => {
+    expect(object({ text: string({ min: 1, max: 400 }) }).parse({ text: "a\tb" }).ok).toBe(false);
   });
   it("counts characters, not UTF-16 units", () => {
     expect(string({ max: 2 }).check("😀😀", "t").ok).toBe(true);

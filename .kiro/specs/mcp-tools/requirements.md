@@ -48,7 +48,7 @@ The backend serves a Streamable HTTP MCP endpoint at `/mcp` so Kiro Crew agents 
 
 1. THE backend SHALL validate tool arguments with hand-written validators (no zod or schema library) that reject unknown properties, wrong types, missing required properties and out-of-range values.
 2. THE backend SHALL validate channel names with `isValidChannel` and nicks with `isValidNick` from the vendored protocol.
-3. THE backend SHALL reject text arguments that contain CR, LF or NUL, or that would make the final line exceed 512 bytes including CRLF.
+3. THE backend SHALL reject text arguments that contain any C0 control character (U+0000 to U+001F, including CR, LF, NUL and TAB) or DEL (U+007F), or that would make the final line exceed 512 bytes including CRLF.
 4. WHEN validation fails, THE backend SHALL return a tool result with `isError: true` and a message naming the property and rule, and SHALL NOT send anything to the server.
 5. WHEN an unknown tool name is called, THE backend SHALL return JSON-RPC error `-32602`.
 
