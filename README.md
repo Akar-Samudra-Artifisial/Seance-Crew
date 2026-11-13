@@ -105,7 +105,7 @@ Phase 1 (raw WebSocket) uses the first account. Phase 2 runs the built `backend/
 
 - `backend/dist/server.js` and `ui/dist/index.mjs` are build artifacts that are committed, because Crew installs exclude `node_modules`.
 - `@kirocrew/app-sdk` is not on npm. It stays a peer dependency of the UI, and installs outside pnpm need `npm install --legacy-peer-deps`.
-- Specs: `.kiro/specs/{irc-bridge,mcp-tools,dashboard-ui,steward-agent,demo-writeup,demo-say-fixes}/`.
+- Specs: `.kiro/specs/{irc-bridge,mcp-tools,dashboard-ui,steward-agent,demo-writeup,demo-say-fixes,refusal-hardening}/`.
 
 ## Security
 

@@ -1160,6 +1160,39 @@ function parseNotice(input, ownNick) {
   return m[4] === void 0 ? { kind: "denied", agent: m[1], action: m[2], reason } : { kind: "denied", agent: m[1], action: m[2], reason, detail: m[4] };
 }
 
+// backend/src/irc/refusal-limit.ts
+var REFUSAL_WINDOW_MS = 1e4;
+var REFUSAL_MAX_KEYS = 100;
+var RefusalLimiter = class {
+  constructor(windowMs = REFUSAL_WINDOW_MS, maxKeys = REFUSAL_MAX_KEYS) {
+    this.windowMs = windowMs;
+    this.maxKeys = maxKeys;
+  }
+  windowMs;
+  maxKeys;
+  slots = /* @__PURE__ */ new Map();
+  /** The number of keys remembered (never above `maxKeys`). */
+  get size() {
+    return this.slots.size;
+  }
+  /** Record one refusal at time `now`. */
+  note(key, now) {
+    const slot = this.slots.get(key);
+    if (slot !== void 0 && now - slot.start < this.windowMs && now >= slot.start) {
+      this.slots.set(key, { start: slot.start, held: slot.held + 1 });
+      return { report: false, suppressed: 0 };
+    }
+    this.slots.delete(key);
+    while (this.slots.size >= this.maxKeys) {
+      const oldest = this.slots.keys().next();
+      if (oldest.done === true) break;
+      this.slots.delete(oldest.value);
+    }
+    this.slots.set(key, { start: now, held: 0 });
+    return { report: true, suppressed: slot?.held ?? 0 };
+  }
+};
+
 // backend/src/irc/dispatch.ts
 var MAX_CHANNELS = 500;
 var MAX_MEMBERS = 500;
@@ -1208,9 +1241,12 @@ var MODE_WITH_PARAM_ON_SET = /* @__PURE__ */ new Set(["k", "l"]);
 var CREDITS_LINE = /^credits: (\S+) (\d+(?:\.\d+)?) \/ total (\d+(?:\.\d+)?)$/;
 var REFUSAL_REASON_MAX = 120;
 var REFUSAL_TARGET_MAX = 60;
+function cutText(text, max) {
+  return text.length > max ? `${text.slice(0, max - 1)}\u2026` : text;
+}
 function cleanServerText(text, max) {
   const clean = stripFormatting(text).replace(/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/g, " ").replace(/\s+/g, " ").trim();
-  return clean.length > max ? `${clean.slice(0, max - 1)}\u2026` : clean;
+  return cutText(clean, max);
 }
 var nickOfPrefix = (prefix) => {
   if (prefix === void 0) return "";
@@ -1269,6 +1305,7 @@ function createDispatcher(store, hooks = {}, logger2) {
     }
     store.setMember(channel2, nick2, modes);
   };
+  const refusalLimiter = new RefusalLimiter();
   const own = () => store.ownNick;
   const isOwn = (nick2) => irc_lower(nick2) === irc_lower(own());
   const resolveDenial = (agent) => {
@@ -1302,13 +1339,29 @@ function createDispatcher(store, hooks = {}, logger2) {
     if (channel2 !== null) store.addLine(channel2, "server", "system", text);
     else store.diagnostics.unresolvedDenials += 1;
   };
-  const onRefusal = (numeric, target, text) => {
+  const onRefusal = (numeric, params) => {
+    const nickFirst = (numeric === "441" || numeric === "443") && params.length >= 4;
+    const nickRaw = nickFirst ? params[1] ?? "" : "";
+    const target = nickFirst ? params[2] ?? "" : params.length >= 3 ? params[1] ?? "" : "";
+    const text = params[params.length - 1] ?? "";
     const redact = (s) => logger2?.redact(s) ?? s;
-    const reason = redact(cleanServerText(text, REFUSAL_REASON_MAX));
-    const where = redact(cleanServerText(target, REFUSAL_TARGET_MAX));
-    logger2?.warn("server refused a command", { numeric, target: where, reason });
+    const safe = (raw, max) => cutText(redact(cleanServerText(redact(raw), Number.POSITIVE_INFINITY)), max);
+    const decision = refusalLimiter.note(`${numeric} ${irc_lower(target)}`, store.now());
+    if (!decision.report) return;
+    const reason = safe(text, REFUSAL_REASON_MAX);
+    const where = safe(target, REFUSAL_TARGET_MAX);
+    const nick2 = nickRaw === "" ? "" : safe(nickRaw, REFUSAL_TARGET_MAX);
+    const more = decision.suppressed > 0 ? ` (${decision.suppressed} more suppressed)` : "";
+    logger2?.warn("server refused a command", {
+      numeric,
+      target: where,
+      ...nick2 === "" ? {} : { nick: nick2 },
+      reason: `${reason}${more}`,
+      ...decision.suppressed > 0 ? { suppressed: decision.suppressed } : {}
+    });
     if (isValidChannel(target) && store.channel(target) !== void 0) {
-      store.addLine(target, "server", "system", `Server refused (${numeric}): ${reason === "" ? "no reason given" : reason}`);
+      const shown = reason === "" ? "no reason given" : reason;
+      store.addLine(target, "server", "system", `Server refused (${numeric}): ${nick2 === "" ? "" : `${nick2}: `}${shown}${more}`);
     }
   };
   const onNotice = (message) => {
@@ -1522,7 +1575,7 @@ function createDispatcher(store, hooks = {}, logger2) {
       case "475":
       case "481":
       case "482":
-        onRefusal(message.command, p.length >= 3 ? p[1] ?? "" : "", p[p.length - 1] ?? "");
+        onRefusal(message.command, p);
         store.emit({ type: "server-error", numeric: message.command, target: p[1] ?? "", text: p[p.length - 1] ?? "" });
         break;
       case "318":

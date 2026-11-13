@@ -53,7 +53,7 @@ Rate limits cap `say` and `summon` so a looping model cannot flood a channel. Th
 
 The app was built with Kiro specs, steering files and hooks.
 
-- **Specs** in [.kiro/specs/](../.kiro/specs/): six specs, each with `requirements.md` (EARS acceptance criteria), `design.md` and `tasks.md`. They are `irc-bridge`, `mcp-tools`, `dashboard-ui`, `steward-agent`, `demo-writeup`, and `demo-say-fixes` (fixes found while rehearsing the demo). Tasks were worked in order, tests included, with a green build after each.
+- **Specs** in [.kiro/specs/](../.kiro/specs/): seven specs, each with `requirements.md` (EARS acceptance criteria), `design.md` and `tasks.md`. They are `irc-bridge`, `mcp-tools`, `dashboard-ui`, `steward-agent`, `demo-writeup`, `demo-say-fixes` (fixes found while rehearsing the demo), and `refusal-hardening` (fixes from a code review of the refusal reports). Tasks were worked in order, tests included, with a green build after each.
 - **Steering** in [.kiro/steering/](../.kiro/steering/): `product.md` (what the app is for), `tech.md` (stack and commands), `kirocrew.md` (Crew runtime facts verified on a live gateway), `irc-seance.md` (the Séance protocol and notice formats) and `security.md` (the threat model and rules above).
 - **Hooks** in [.kiro/hooks/](../.kiro/hooks/): `guard-shell.json` blocks destructive shell commands before they run, and `verify-after-task.json` runs `pnpm typecheck && pnpm test` after each spec task.
 

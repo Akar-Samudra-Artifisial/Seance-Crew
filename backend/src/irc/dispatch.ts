@@ -3,6 +3,7 @@ import { irc_lower, isValidChannel, isValidNick, type IrcMessage } from "../../v
 import type { Logger } from "../log.js";
 import { stripFormatting } from "./format.js";
 import { parseNotice, type DeniedReason } from "./notices.js";
+import { RefusalLimiter } from "./refusal-limit.js";
 import type { Store, WhoisInfo } from "./store.js";
 
 /** Bounds on what a server can make the bridge remember. */
@@ -61,10 +62,15 @@ const CREDITS_LINE = /^credits: (\S+) (\d+(?:\.\d+)?) \/ total (\d+(?:\.\d+)?)$/
 export const REFUSAL_REASON_MAX = 120;
 export const REFUSAL_TARGET_MAX = 60;
 
+/** Cut `text` to `max` characters, with an ellipsis as the last one when something was removed. */
+export function cutText(text: string, max: number): string {
+  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+}
+
 /** Server text made safe for a log entry or a channel line: formatting and control characters removed, cut to `max`. */
 export function cleanServerText(text: string, max: number): string {
   const clean = stripFormatting(text).replace(/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/g, " ").replace(/\s+/g, " ").trim();
-  return clean.length > max ? `${clean.slice(0, max - 1)}…` : clean;
+  return cutText(clean, max);
 }
 
 export const nickOfPrefix = (prefix: string | undefined): string => {
@@ -134,6 +140,7 @@ export function createDispatcher(store: Store, hooks: DispatchHooks = {}, logger
     store.setMember(channel, nick, modes);
   };
 
+  const refusalLimiter = new RefusalLimiter();
   const own = (): string => store.ownNick;
   const isOwn = (nick: string): boolean => irc_lower(nick) === irc_lower(own());
 
@@ -176,14 +183,36 @@ export function createDispatcher(store: Store, hooks: DispatchHooks = {}, logger
    * `warn`; when it names a channel the store tracks, also one `system` line in that channel's log. A refusal never
    * creates a channel. The text comes from the server, so it is untrusted: cleaned and cut before it is stored or logged.
    */
-  const onRefusal = (numeric: string, target: string, text: string): void => {
+  const onRefusal = (numeric: string, params: readonly string[]): void => {
+    // 441 (ERR_USERNOTINCHANNEL) and 443 (ERR_USERONCHANNEL) are `<me> <nick> <channel> :text`: the nick comes first.
+    // Every other refusal is `<me> <target> :text`, and a reply with no target (481) is `<me> :text`.
+    const nickFirst = (numeric === "441" || numeric === "443") && params.length >= 4;
+    const nickRaw = nickFirst ? (params[1] ?? "") : "";
+    const target = nickFirst ? (params[2] ?? "") : params.length >= 3 ? (params[1] ?? "") : "";
+    const text = params[params.length - 1] ?? "";
     // The logger's redaction (the Séance secret, PASS lines) also covers the text that goes into the channel log.
+    // Redact the whole raw text first, clean it, redact again (a secret split by a control character), and cut last, so a
+    // secret that crosses the cut position is replaced as a whole and never half shown.
     const redact = (s: string): string => logger?.redact(s) ?? s;
-    const reason = redact(cleanServerText(text, REFUSAL_REASON_MAX));
-    const where = redact(cleanServerText(target, REFUSAL_TARGET_MAX));
-    logger?.warn("server refused a command", { numeric, target: where, reason });
+    const safe = (raw: string, max: number): string => cutText(redact(cleanServerText(redact(raw), Number.POSITIVE_INFINITY)), max);
+    // At most one report per (numeric, channel or target) per 10 s. The `server-error` event is not limited (see the case).
+    const decision = refusalLimiter.note(`${numeric} ${irc_lower(target)}`, store.now());
+    if (!decision.report) return;
+    const reason = safe(text, REFUSAL_REASON_MAX);
+    const where = safe(target, REFUSAL_TARGET_MAX);
+    const nick = nickRaw === "" ? "" : safe(nickRaw, REFUSAL_TARGET_MAX);
+    // The count is added after the cut, so it is never cut off.
+    const more = decision.suppressed > 0 ? ` (${decision.suppressed} more suppressed)` : "";
+    logger?.warn("server refused a command", {
+      numeric,
+      target: where,
+      ...(nick === "" ? {} : { nick }),
+      reason: `${reason}${more}`,
+      ...(decision.suppressed > 0 ? { suppressed: decision.suppressed } : {}),
+    });
     if (isValidChannel(target) && store.channel(target) !== undefined) {
-      store.addLine(target, "server", "system", `Server refused (${numeric}): ${reason === "" ? "no reason given" : reason}`);
+      const shown = reason === "" ? "no reason given" : reason;
+      store.addLine(target, "server", "system", `Server refused (${numeric}): ${nick === "" ? "" : `${nick}: `}${shown}${more}`);
     }
   };
 
@@ -407,7 +436,7 @@ export function createDispatcher(store: Store, hooks: DispatchHooks = {}, logger
         // Replies to commands we sent (JOIN, INVITE, MODE, KICK, PRIVMSG); tools waiting on an outcome listen for them.
         // Nothing waits for a refused `say`, so report every refusal here as well: a log entry and a channel line.
         // (A reply with no target, such as 481, has only <me> and the text.)
-        onRefusal(message.command, p.length >= 3 ? (p[1] ?? "") : "", p[p.length - 1] ?? "");
+        onRefusal(message.command, p);
         store.emit({ type: "server-error", numeric: message.command, target: p[1] ?? "", text: p[p.length - 1] ?? "" });
         break;
       case "318":
