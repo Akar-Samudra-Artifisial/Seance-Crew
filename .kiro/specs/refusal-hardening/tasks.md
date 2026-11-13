@@ -2,7 +2,7 @@
 
 ## Overview
 
-Fixes three Minor findings from the code review of `onRefusal` (`demo-say-fixes`), tasks 1 to 4, and then one Medium finding from the security review and two Minor findings from the review of commit d11ab18, tasks 5 to 7. Depends on `irc-bridge`, `mcp-tools` and `demo-say-fixes`. Tasks run in the order listed, one at a time, tests included. After each task `pnpm typecheck && pnpm test` must be green. Never edit `backend/vendor/irc-protocol/`, treat channel text as untrusted, and never log the secret.
+Fixes three Minor findings from the code review of `onRefusal` (`demo-say-fixes`), tasks 1 to 4, and then one Medium finding from the security review and two Minor findings from the review of commit d11ab18, tasks 5 to 7, and then one Low finding from a security review (the limiter must use a monotonic clock), task 8. Depends on `irc-bridge`, `mcp-tools` and `demo-say-fixes`. Tasks run in the order listed, one at a time, tests included. After each task `pnpm typecheck && pnpm test` must be green. Never edit `backend/vendor/irc-protocol/`, treat channel text as untrusted, and never log the secret.
 
 ## Tasks
 
@@ -39,6 +39,12 @@ Fixes three Minor findings from the code review of `onRefusal` (`demo-say-fixes`
 - [x] 7. Final checks and bundle for the extension
   - Run `pnpm typecheck && pnpm lint && pnpm test`, then `pnpm build` twice (identical output) and `pnpm check:dist` with `backend/dist/server.js` rebuilt. The spec count in `README.md`, `docs/WRITEUP.md` and `AGENTS.md` does not change.
   - _Requirements: 7.2, 7.3_
+
+- [x] 8. Monotonic time for the refusal limiter
+  - `Clock.monotonic?()` and `systemClock.monotonic` (`performance.now()`) in `clock.ts`; `Store.monotonicNow()` (falls back to `now()`); `dispatch.ts` passes `store.monotonicNow()` to `refusalLimiter.note` and to nothing else; header comment of `refusal-limit.ts`. No other `store.now()` call changes, no limit changes, no timer.
+  - Tests first in `backend/test/refusal-monotonic.test.ts`: `systemClock.monotonic` exists and never goes down; `Store.monotonicNow()` returns the fake's `monotonic()` when present and `now()` when absent; a dispatcher with a fake clock that has both: after one report, `now()` moves back one hour while `monotonic()` moves forward less than 10 s, a repeat and more than `REFUSAL_GLOBAL_BUDGET` refusals for new targets give no extra report and no early refill; then `monotonic()` moves forward by `REFUSAL_WINDOW_MS` and the next report is allowed and carries the suppressed count; the existing fakes without `monotonic` still pass.
+  - Run `pnpm typecheck && pnpm lint && pnpm test`, then `pnpm build` twice (identical output) and `pnpm check:dist` with `backend/dist/server.js` rebuilt.
+  - _Requirements: 8.1, 8.2, 8.3_
 
 ## Notes
 
@@ -91,6 +97,12 @@ Fixes three Minor findings from the code review of `onRefusal` (`demo-say-fixes`
       "id": 6,
       "tasks": [
         "7"
+      ]
+    },
+    {
+      "id": 7,
+      "tasks": [
+        "8"
       ]
     }
   ]

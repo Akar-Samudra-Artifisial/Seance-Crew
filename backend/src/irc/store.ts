@@ -144,6 +144,14 @@ export class Store {
     return this.clock.now();
   }
 
+  /**
+   * Time for measuring elapsed time only (refusal-hardening Requirement 8): monotonic when the clock has a source,
+   * otherwise `now()`, so fake clocks without one keep working. Never show it to people; use `now()` for that.
+   */
+  monotonicNow(): number {
+    return this.clock.monotonic?.() ?? this.clock.now();
+  }
+
   // ---- revision and events -------------------------------------------------
 
   /** Increases on every change, so pollers can ask for changes only. */

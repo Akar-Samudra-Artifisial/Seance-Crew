@@ -1394,7 +1394,7 @@ function createDispatcher(store, hooks = {}, logger2) {
     const text = params[params.length - 1] ?? "";
     const redact = (s) => logger2?.redact(s) ?? s;
     const safe = (raw, max) => cutText(redact(cleanServerText(redact(raw), Number.POSITIVE_INFINITY)), max);
-    const decision = refusalLimiter.note(refusalKey(numeric, target, nickRaw), store.now());
+    const decision = refusalLimiter.note(refusalKey(numeric, target, nickRaw), store.monotonicNow());
     if (!decision.report) return;
     if (decision.summary > 0) logger2?.warn(`${decision.summary} refusal reports suppressed (global limit)`, { suppressed: decision.summary });
     const reason = safe(text, REFUSAL_REASON_MAX);
@@ -1916,6 +1916,13 @@ var Store = class {
   }
   now() {
     return this.clock.now();
+  }
+  /**
+   * Time for measuring elapsed time only (refusal-hardening Requirement 8): monotonic when the clock has a source,
+   * otherwise `now()`, so fake clocks without one keep working. Never show it to people; use `now()` for that.
+   */
+  monotonicNow() {
+    return this.clock.monotonic?.() ?? this.clock.now();
   }
   // ---- revision and events -------------------------------------------------
   /** Increases on every change, so pollers can ask for changes only. */
@@ -4140,6 +4147,7 @@ async function startApp(deps) {
 // backend/src/clock.ts
 var systemClock = {
   now: () => Date.now(),
+  monotonic: () => performance.now(),
   setTimeout: (fn, ms) => {
     const handle = setTimeout(fn, ms);
     handle.unref();

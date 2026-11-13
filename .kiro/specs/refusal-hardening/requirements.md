@@ -2,7 +2,7 @@
 
 ## Introduction
 
-`demo-say-fixes` made server refusals visible: each refusal numeric is logged once at `warn` and, for a tracked channel, shown as a `system` line in the channel log. A code review of that change (`onRefusal` in `backend/src/irc/dispatch.ts`) found three Minor problems. The secret is redacted after the text is cut, so a secret that straddles the cut can leak in part. Two numerics (441 and 443) carry a nick before the channel, so their channel never matches and they never reach the log. And a server, or a loop, can send the same refusal many times, which floods the log and the channel. This spec fixes the three (Requirements 1 to 4). A later security review then found that the per-key limit can be bypassed by sending refusals for many different targets, and a review of commit d11ab18 found that two nicks in one channel suppress each other (Requirements 5 to 7). It changes `irc-bridge` only, adds no tool, no API field and no dependency, and does not change the internal `server-error` event.
+`demo-say-fixes` made server refusals visible: each refusal numeric is logged once at `warn` and, for a tracked channel, shown as a `system` line in the channel log. A code review of that change (`onRefusal` in `backend/src/irc/dispatch.ts`) found three Minor problems. The secret is redacted after the text is cut, so a secret that straddles the cut can leak in part. Two numerics (441 and 443) carry a nick before the channel, so their channel never matches and they never reach the log. And a server, or a loop, can send the same refusal many times, which floods the log and the channel. This spec fixes the three (Requirements 1 to 4). A later security review then found that the per-key limit can be bypassed by sending refusals for many different targets, and a review of commit d11ab18 found that two nicks in one channel suppress each other (Requirements 5 to 7). A last security review (Low) found that the limiter uses the wall clock, so a clock that steps back refills the budget early (Requirement 8). It changes `irc-bridge` only, adds no tool, no API field and no dependency, and does not change the internal `server-error` event.
 
 ## Glossary
 
@@ -96,3 +96,13 @@
 1. THE repository SHALL have tests showing that 200 refusals for 200 different targets within 10 seconds give at most 20 reports and, after the window, one global summary entry; that a tracked channel's key is not reset by eviction while its window is open; that the held count of an expired key that is dropped appears in the next global summary; that two nicks in one channel with 441 are both reported; that an invalid nick in a 441 is left out; that the key stays bounded for a 5,000 character target; and that `server-error` is still emitted for every refusal.
 2. Existing refusal tests SHALL still pass, and any expectation changed on purpose SHALL be named in `design.md`.
 3. `pnpm typecheck`, `pnpm lint`, `pnpm test` and `pnpm check:dist` SHALL pass, with `backend/dist/server.js` rebuilt.
+
+### Requirement 8: The limiter measures time with a monotonic source
+
+**User Story:** As an operator, I want the refusal limits to hold even when the host clock is corrected or changed, so that a clock that steps back cannot refill the report budget early.
+
+#### Acceptance Criteria
+
+1. THE refusal limiter SHALL measure its windows with a monotonic time source, so a wall clock that steps back or forward does not open or close a window.
+2. WHEN the clock has no monotonic source (a test fake), THE store SHALL fall back to `now()`, so existing fake clocks keep working without changes.
+3. Timestamps shown to people (log lines, `serverTime`, line `at`) SHALL stay on the wall clock.

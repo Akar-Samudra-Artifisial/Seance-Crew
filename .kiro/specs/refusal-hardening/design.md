@@ -94,6 +94,17 @@ The `server-error` event is emitted before any of this and is never limited. Its
 - `refusal-limit.test.ts` "a renewed key moves to the newest end" used times that are all inside one window; it now spaces the times so the windows are expired when the key is renewed.
 - Tests that sent more than 20 distinct keys in one window (none in `refusals.test.ts` or `refusal-hardening.test.ts`) would now be limited; the existing ones use at most 4 keys, so none changed.
 
+### Monotonic time for the limiter (Requirement 8)
+
+`store.now()` is the wall clock (`systemClock.now = () => Date.now()`). The limiter only measures elapsed time, so a wall clock that steps back (an NTP correction, a manual change) would open a new global window and expire every key window, and the report budget would refill early. The limiter therefore gets a monotonic time.
+
+1. `backend/src/clock.ts`: `Clock` gets an optional `monotonic?(): number` ("milliseconds from an arbitrary origin; never steps back; only for measuring elapsed time"). `systemClock.monotonic` is `() => performance.now()` (the global `performance`; no import, no dependency).
+2. `backend/src/irc/store.ts`: `monotonicNow()` next to `now()` returns `this.clock.monotonic?.() ?? this.clock.now()`. A clock without `monotonic` (every existing test fake) falls back to `now()`, so nothing in the tests changes.
+3. `backend/src/irc/dispatch.ts`: `refusalLimiter.note(...)` takes `store.monotonicNow()`. No other `store.now()` call changes: line timestamps, `serverTime`, inbox ages and the `ready` and commit times stay on the wall clock, because people read them.
+4. `backend/src/irc/refusal-limit.ts`: the logic is unchanged, including the "clock steps back" guard in `open()`, which stays as defence in depth. Only the header comment changes: the caller passes a monotonic time.
+
+The limits (`REFUSAL_WINDOW_MS`, `REFUSAL_MAX_KEYS`, `REFUSAL_GLOBAL_BUDGET`) and the report and summary text do not change. There is still no timer.
+
 ## Data Models
 
 No persistent data, no API field. The limiter holds at most 100 small records and four numbers in memory, and it is created with the dispatcher.
@@ -135,6 +146,12 @@ In any window of 10 seconds at most 20 reports are written, and a key with an op
 A count held on a key that is dropped, and a refusal that was not stored or not reported, reach the next global summary.
 
 **Validates: Requirements 5.2, 5.5**
+
+### Property 7: A wall clock step does not refill the budget
+
+While the monotonic time stays inside a window, moving the wall clock back or forward by any amount gives no extra report, and the next report after `REFUSAL_WINDOW_MS` of monotonic time carries the suppressed count.
+
+**Validates: Requirements 8.1, 8.2, 8.3**
 
 ### Property 4: The report rate per key is bounded
 

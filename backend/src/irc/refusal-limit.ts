@@ -6,7 +6,8 @@
 //     many different targets cannot get around the per-key limit. Refusals over the budget are counted and the next
 //     allowed report is preceded by one summary.
 // Only the reports are limited: the `server-error` events that tools wait on are not. There are no timers: a window is
-// evaluated when the next refusal arrives, with the time the caller passes in (the store's injectable clock).
+// evaluated when the next refusal arrives, with the time the caller passes in. The caller passes a monotonic time (the
+// store's `monotonicNow()`), so a wall clock that is corrected or changed cannot open or close a window.
 
 export const REFUSAL_WINDOW_MS = 10_000;
 export const REFUSAL_MAX_KEYS = 100;

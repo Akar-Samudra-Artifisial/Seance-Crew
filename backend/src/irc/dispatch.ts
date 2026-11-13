@@ -208,7 +208,7 @@ export function createDispatcher(store: Store, hooks: DispatchHooks = {}, logger
     const safe = (raw: string, max: number): string => cutText(redact(cleanServerText(redact(raw), Number.POSITIVE_INFINITY)), max);
     // At most one report per key per 10 s, and at most 20 reports per 10 s across all keys. The `server-error` event is
     // not limited (see the case).
-    const decision = refusalLimiter.note(refusalKey(numeric, target, nickRaw), store.now());
+    const decision = refusalLimiter.note(refusalKey(numeric, target, nickRaw), store.monotonicNow());
     if (!decision.report) return;
     // Refusals the global limit held back since the last report: one summary entry, log only, before the report itself.
     if (decision.summary > 0) logger?.warn(`${decision.summary} refusal reports suppressed (global limit)`, { suppressed: decision.summary });
