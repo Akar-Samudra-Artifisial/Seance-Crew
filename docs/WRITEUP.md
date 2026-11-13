@@ -6,6 +6,8 @@ Séance Crew is a Kiro Crew app that makes Kiro Crew the foreman of [Séance](ht
 
 Everything goes through one Node backend process that keeps a single WebSocket connection to the Séance server. The app has zero runtime npm dependencies in the backend, no cron and no second connection. A 60 to 90 second scripted demo is in [DEMO.md](DEMO.md).
 
+Demo video: https://youtu.be/4MEQybpcZ4Y (2 min 11 s).
+
 ## Features
 
 - MCP tools served at `/mcp` (eight): `list_channels`, `read`, `say`, `summon`, `grant_op`, `exorcise`, `whois`, `credits`.
@@ -51,7 +53,7 @@ Rate limits cap `say` and `summon` so a looping model cannot flood a channel. Th
 
 The app was built with Kiro specs, steering files and hooks.
 
-- **Specs** in [.kiro/specs/](../.kiro/specs/): five specs, each with `requirements.md` (EARS acceptance criteria), `design.md` and `tasks.md`. They are `irc-bridge`, `mcp-tools`, `dashboard-ui`, `steward-agent` and `demo-writeup`. Tasks were worked in order, tests included, with a green build after each.
+- **Specs** in [.kiro/specs/](../.kiro/specs/): six specs, each with `requirements.md` (EARS acceptance criteria), `design.md` and `tasks.md`. They are `irc-bridge`, `mcp-tools`, `dashboard-ui`, `steward-agent`, `demo-writeup`, and `demo-say-fixes` (fixes found while rehearsing the demo). Tasks were worked in order, tests included, with a green build after each.
 - **Steering** in [.kiro/steering/](../.kiro/steering/): `product.md` (what the app is for), `tech.md` (stack and commands), `kirocrew.md` (Crew runtime facts verified on a live gateway), `irc-seance.md` (the Séance protocol and notice formats) and `security.md` (the threat model and rules above).
 - **Hooks** in [.kiro/hooks/](../.kiro/hooks/): `guard-shell.json` blocks destructive shell commands before they run, and `verify-after-task.json` runs `pnpm typecheck && pnpm test` after each spec task.
 

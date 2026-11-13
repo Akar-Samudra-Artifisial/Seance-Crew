@@ -6,7 +6,7 @@ From Crew chat or a dashboard page you can list channels, summon an agent, grant
 
 > Status: the backend, the dashboard page and the steward are implemented. The behavior is described in `.kiro/specs/`.
 
-Judge-facing documents: [docs/DEMO.md](docs/DEMO.md) (a 60 to 90 second scenario) and [docs/WRITEUP.md](docs/WRITEUP.md) (features, architecture, security, how Kiro built it).
+Judge-facing: [demo video](https://youtu.be/4MEQybpcZ4Y) (2 min), [docs/DEMO.md](docs/DEMO.md) (a 60 to 90 second scenario) and [docs/WRITEUP.md](docs/WRITEUP.md) (features, architecture, security, how Kiro built it).
 
 ## How it works
 
@@ -105,7 +105,7 @@ Phase 1 (raw WebSocket) uses the first account. Phase 2 runs the built `backend/
 
 - `backend/dist/server.js` and `ui/dist/index.mjs` are build artifacts that are committed, because Crew installs exclude `node_modules`.
 - `@kirocrew/app-sdk` is not on npm. It stays a peer dependency of the UI, and installs outside pnpm need `npm install --legacy-peer-deps`.
-- Specs: `.kiro/specs/{irc-bridge,mcp-tools,dashboard-ui,steward-agent,demo-writeup}/`.
+- Specs: `.kiro/specs/{irc-bridge,mcp-tools,dashboard-ui,steward-agent,demo-writeup,demo-say-fixes}/`.
 
 ## Security
 
