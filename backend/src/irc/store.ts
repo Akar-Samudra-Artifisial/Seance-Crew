@@ -116,6 +116,9 @@ export const RING_CAPACITY = 500;
 export const COMMIT_LIMIT = 50;
 export const INBOX_LIMIT = 200;
 export const DEDUP_MS = 60_000;
+/** How long, and how many, own messages are remembered to recognise an echo from the server. */
+export const OWN_ECHO_MS = 30_000;
+export const OWN_MARKER_LIMIT = 20;
 export const DROP_AFTER_LEAVE_MS = 10 * 60_000;
 
 export class Store {
@@ -125,6 +128,7 @@ export class Store {
   private readonly inboxItems: InboxItem[] = [];
   private readonly handlers = new Map<EventType, Set<(event: never) => void>>();
   private readonly anyHandlers = new Set<(event: BridgeEvent) => void>();
+  private readonly ownMarkers: Array<{ readonly key: string; readonly at: number }> = [];
   private inboxCounter = 0;
   private rev = 0;
   /** Counters for diagnostics only. */
@@ -283,6 +287,43 @@ export class Store {
     const line = channel.ring.push((seq) => ({ seq, ts, from, kind, text: clean }));
     this.emit({ type: "line", channel: channel.name, line });
     return line;
+  }
+
+  // ---- own messages ------------------------------------------------------------
+
+  /**
+   * Record a message the bridge itself sent (`say`). The server does not echo our own PRIVMSG, so without this the
+   * message would never reach the log. Only a tracked channel gets a line: `say` must not make the store grow. The line
+   * is a normal `privmsg` from our own nick, and a marker lets `consumeOwnEcho` swallow an echo if a server ever sends one.
+   */
+  addOwnMessage(channelName: string, text: string): ChannelLine | null {
+    if (this.channel(channelName) === undefined) return null;
+    const line = this.addLine(channelName, this.ownNick, "privmsg", text);
+    this.pruneOwnMarkers();
+    this.ownMarkers.push({ key: this.echoKey(channelName, line.text), at: this.clock.now() });
+    if (this.ownMarkers.length > OWN_MARKER_LIMIT) this.ownMarkers.shift();
+    return line;
+  }
+
+  /** True once, and only within OWN_ECHO_MS of the send, for a PRIVMSG that repeats an own message (an echo). */
+  consumeOwnEcho(channelName: string, text: string): boolean {
+    this.pruneOwnMarkers();
+    const key = this.echoKey(channelName, stripFormatting(text));
+    const index = this.ownMarkers.findIndex((m) => m.key === key);
+    if (index === -1) return false;
+    this.ownMarkers.splice(index, 1);
+    return true;
+  }
+
+  private echoKey(channelName: string, cleanText: string): string {
+    return `${this.key(channelName)}\u0000${cleanText}`;
+  }
+
+  private pruneOwnMarkers(): void {
+    const now = this.clock.now();
+    for (let i = this.ownMarkers.length - 1; i >= 0; i -= 1) {
+      if (now - (this.ownMarkers[i]?.at ?? 0) >= OWN_ECHO_MS) this.ownMarkers.splice(i, 1);
+    }
   }
 
   // ---- members -----------------------------------------------------------------

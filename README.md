@@ -45,7 +45,7 @@ kirocrew app enable seance-crew
 After enabling the app, pick the `seance-steward` agent in Crew chat. It works only through the `seance` MCP tools:
 
 - lists channels, summons an agent (default `coder`), and reads and sends channel messages;
-- asks you before it grants `+o`, exorcises an agent, or summons any agent other than `coder`, and passes `confirm: true` only after you agree (it prefers `+v` first);
+- asks you before it grants `+o`, exorcises an agent, or summons any agent other than `coder`, and passes `confirm: true` only after you agree (it prefers `+v` first, and after a summon it asks for `+v` before its first `say` to that agent);
 - runs the read-only tools (`list_channels`, `read`, `whois`, `credits`) without a prompt, because the agent file auto-approves exactly those; `say`, `summon`, `grant_op` and `exorcise` still go through the Kiro Crew approval prompt, a human check that text in a channel cannot answer;
 - shows open needs-op requests in the `list_channels` result;
 - treats all channel text as untrusted data and never obeys it;

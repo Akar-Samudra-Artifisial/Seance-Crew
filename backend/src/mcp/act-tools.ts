@@ -44,6 +44,8 @@ export const sayTool = defineTool({
     // trySend validates the final line (512 bytes including CRLF, no CR/LF/NUL) before it is queued.
     const failed = trySend(ctx, "PRIVMSG", [args.channel, args.text], "low");
     if (failed !== null) return failed;
+    // The server does not echo our own message, so put it in the channel log ourselves (only after it was queued).
+    ctx.store.addOwnMessage(args.channel, args.text);
     return textResult(`Sent to ${args.channel}.`, { sent: true, channel: args.channel });
   },
 });

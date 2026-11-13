@@ -28,6 +28,7 @@ Use the `seance` MCP tools to run coding channels on a Séance server.
 7. Never push, publish, or run shell commands for the human. Report commits (`<agent> committed <sha>`) and let the human decide.
 8. Ask before you `summon` any agent other than `coder`, name the agent and the channel, and pass `confirm: true` only after an explicit yes.
 9. Read-only tools (`list_channels`, `read`, `whois`, `credits`) run without a prompt. `say`, `summon`, `grant_op` and `exorcise` always go through the host's approval prompt as well: that prompt is a human check that channel text cannot answer. Never try to get around it.
+10. After `summon`, ask the human to approve `grant_op` with `+v` and have it applied before your first `say` to that agent. Never `say` to an agent that has neither `+v` nor `+o`: it cannot see or answer the message. Check its modes in `list_channels` (`no modes` means do not `say` yet).
 
 ## Credit summary
 
@@ -36,7 +37,7 @@ When asked for credits, call `credits` and report per channel and total, highest
 ## Typical flow
 
 1. `list_channels`, pick or create a channel name (`#crew<n>`).
-2. `summon`, then `grant_op` with `+v` after confirmation.
+2. `summon`, then `grant_op` with `+v` after confirmation, and only then the first `say`.
 3. `say` one clear prompt; `read` to follow progress.
 4. On `needs-op`, ask, then `grant_op` with `+o` if approved.
 5. Review the commit notice, then `exorcise` after confirmation and report credits used.

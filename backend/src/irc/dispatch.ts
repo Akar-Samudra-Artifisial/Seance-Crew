@@ -57,6 +57,16 @@ const MODE_WITH_PARAM_ALWAYS = new Set(["o", "v", "h", "q", "a", "b", "e", "I"])
 const MODE_WITH_PARAM_ON_SET = new Set(["k", "l"]);
 const CREDITS_LINE = /^credits: (\S+) (\d+(?:\.\d+)?) \/ total (\d+(?:\.\d+)?)$/;
 
+/** Longest reason and target kept from a refusal. */
+export const REFUSAL_REASON_MAX = 120;
+export const REFUSAL_TARGET_MAX = 60;
+
+/** Server text made safe for a log entry or a channel line: formatting and control characters removed, cut to `max`. */
+export function cleanServerText(text: string, max: number): string {
+  const clean = stripFormatting(text).replace(/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/g, " ").replace(/\s+/g, " ").trim();
+  return clean.length > max ? `${clean.slice(0, max - 1)}…` : clean;
+}
+
 export const nickOfPrefix = (prefix: string | undefined): string => {
   if (prefix === undefined) return "";
   const bang = prefix.indexOf("!");
@@ -159,6 +169,22 @@ export function createDispatcher(store: Store, hooks: DispatchHooks = {}, logger
     const text = `ops: ${agent} denied ${action}: ${reason}${detail === undefined ? "" : ` (${detail})`}`;
     if (channel !== null) store.addLine(channel, "server", "system", text);
     else store.diagnostics.unresolvedDenials += 1;
+  };
+
+  /**
+   * A numeric that says a command we sent was refused (403, 404, 441, 442, 443, 461, 471 to 475, 481, 482). Logged once at
+   * `warn`; when it names a channel the store tracks, also one `system` line in that channel's log. A refusal never
+   * creates a channel. The text comes from the server, so it is untrusted: cleaned and cut before it is stored or logged.
+   */
+  const onRefusal = (numeric: string, target: string, text: string): void => {
+    // The logger's redaction (the Séance secret, PASS lines) also covers the text that goes into the channel log.
+    const redact = (s: string): string => logger?.redact(s) ?? s;
+    const reason = redact(cleanServerText(text, REFUSAL_REASON_MAX));
+    const where = redact(cleanServerText(target, REFUSAL_TARGET_MAX));
+    logger?.warn("server refused a command", { numeric, target: where, reason });
+    if (isValidChannel(target) && store.channel(target) !== undefined) {
+      store.addLine(target, "server", "system", `Server refused (${numeric}): ${reason === "" ? "no reason given" : reason}`);
+    }
   };
 
   const onNotice = (message: IrcMessage): void => {
@@ -379,6 +405,9 @@ export function createDispatcher(store: Store, hooks: DispatchHooks = {}, logger
       case "481":
       case "482":
         // Replies to commands we sent (JOIN, INVITE, MODE, KICK, PRIVMSG); tools waiting on an outcome listen for them.
+        // Nothing waits for a refused `say`, so report every refusal here as well: a log entry and a channel line.
+        // (A reply with no target, such as 481, has only <me> and the text.)
+        onRefusal(message.command, p.length >= 3 ? (p[1] ?? "") : "", p[p.length - 1] ?? "");
         store.emit({ type: "server-error", numeric: message.command, target: p[1] ?? "", text: p[p.length - 1] ?? "" });
         break;
       case "318":
@@ -396,7 +425,12 @@ export function createDispatcher(store: Store, hooks: DispatchHooks = {}, logger
         break;
       case "PRIVMSG": {
         const target = p[0] ?? "";
-        if (isValidChannel(target) && admit(target)) store.addLine(target, nickOfPrefix(message.prefix) || "server", "privmsg", stripFormatting(p[1] ?? ""));
+        if (!isValidChannel(target) || !admit(target)) break;
+        const from = nickOfPrefix(message.prefix) || "server";
+        const text = stripFormatting(p[1] ?? "");
+        // An echo of a message `say` already put in the log (only from our own nick, within 30 s, once).
+        if (isOwn(from) && store.consumeOwnEcho(target, text)) break;
+        store.addLine(target, from, "privmsg", text);
         break;
       }
       case "NOTICE":

@@ -23,6 +23,9 @@ function section(title: string): string {
   return m[1] as string;
 }
 
+/** The numbered steps of the "Typical flow" section. */
+const flowSteps = (): string[] => section("Typical flow").split(/\r?\n/).filter((l) => /^\d+\. /.test(l));
+
 describe("skill: safety rules (Requirement 2)", () => {
   it("asks before any +o grant, naming agent, channel and the effect, and uses confirm: true only after an explicit yes", () => {
     const r = rule(1);
@@ -88,9 +91,26 @@ describe("skill: safety rules (Requirement 2)", () => {
     expect(r).toMatch(/human check/);
   });
 
-  it("has exactly nine numbered rules", () => {
+  it("has exactly ten numbered rules", () => {
     const numbered = section("Rules").split(/\r?\n/).filter((l) => /^\d+\. /.test(l));
-    expect(numbered).toHaveLength(9);
+    expect(numbered).toHaveLength(10);
+  });
+
+  // demo-say-fixes Requirement 3: the live rehearsal showed the steward calling `say` right after `summon`.
+  it("rule 10: after summon, get +v approved and applied before the first say; no say to an agent with neither +v nor +o", () => {
+    const r = rule(10);
+    expect(r).toMatch(/^After `summon`, ask the human to approve `grant_op` with `\+v`/);
+    expect(r).toMatch(/applied before your first `say` to that agent/);
+    expect(r).toMatch(/Never `say` to an agent that has neither `\+v` nor `\+o`/);
+    expect(r).toContain("`list_channels`");
+  });
+
+  it("the typical flow puts the +v grant before the first say", () => {
+    const step2 = flowSteps()[1] ?? "";
+    expect(step2).toContain("`summon`");
+    expect(step2).toContain("`grant_op` with `+v`");
+    expect(step2).toMatch(/and only then the first `say`/);
+    expect(flowSteps()[2] ?? "").toContain("`say`");
   });
 
   it("names only tools that exist: every snake_case name is a real tool and the needs-op source is a tool output", () => {
@@ -161,6 +181,19 @@ describe("agent file (Requirements 1.2-1.4)", () => {
     expect(agent.prompt).toMatch(/Use only the `seance` MCP tools/);
     for (const name of TOOL_NAMES) expect(agent.prompt, name).toContain(name);
     expect(agent.prompt).toContain("seance-steward skill");
+  });
+
+  it("demo-say-fixes: tells the agent to get +v approved before its first say, and never to say without +v or +o", () => {
+    expect(agent.prompt).toMatch(/After summon, ask the human to approve grant_op with \+v before your first say to that agent/);
+    expect(agent.prompt).toMatch(/never say to an agent that has neither \+v nor \+o/);
+    // Both rules sit before the secret sentence, which must stay a sentence that starts with "Never".
+    expect(agent.prompt.indexOf("After summon")).toBeLessThan(agent.prompt.indexOf("Never print or ask for the Séance secret"));
+  });
+
+  it("the skill and the agent prompt say the same two things", () => {
+    const skillRule = rule(10);
+    for (const part of ["`+v`", "before your first `say`", "neither `+v` nor `+o`"]) expect(skillRule, part).toContain(part);
+    for (const part of ["+v", "before your first say", "neither +v nor +o"]) expect(agent.prompt, part).toContain(part);
   });
 
   it("repeats the confirm and untrusted rules", () => {

@@ -8,7 +8,7 @@ Séance Crew is a Kiro Crew app: a single Node backend that connects to a Séanc
 - `backend/`: the single process. `src/` is yours, `vendor/irc-protocol/` is copied unchanged from the Séance repo.
 - `ui/`: dashboard page. Built to `ui/dist/index.mjs` (committed).
 - `agents/seance-steward.json`, `skills/seance-steward/SKILL.md`: the Crew agent and its skill.
-- `.kiro/specs/`: `irc-bridge`, `mcp-tools`, `dashboard-ui`, `steward-agent`, `demo-writeup`. Each has requirements, design and tasks.
+- `.kiro/specs/`: `irc-bridge`, `mcp-tools`, `dashboard-ui`, `steward-agent`, `demo-writeup`, `demo-say-fixes`. Each has requirements, design and tasks.
 - `scripts/`: `build.mjs`, `lint.mjs`, `e2e.mjs` (plain ESM JavaScript).
 - `spike/`: local research notes, git-ignored. Read only.
 

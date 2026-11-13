@@ -1206,6 +1206,12 @@ var NAME_PREFIX = { "@": "o", "+": "v", "%": "h", "~": "q", "&": "a" };
 var MODE_WITH_PARAM_ALWAYS = /* @__PURE__ */ new Set(["o", "v", "h", "q", "a", "b", "e", "I"]);
 var MODE_WITH_PARAM_ON_SET = /* @__PURE__ */ new Set(["k", "l"]);
 var CREDITS_LINE = /^credits: (\S+) (\d+(?:\.\d+)?) \/ total (\d+(?:\.\d+)?)$/;
+var REFUSAL_REASON_MAX = 120;
+var REFUSAL_TARGET_MAX = 60;
+function cleanServerText(text, max) {
+  const clean = stripFormatting(text).replace(/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/g, " ").replace(/\s+/g, " ").trim();
+  return clean.length > max ? `${clean.slice(0, max - 1)}\u2026` : clean;
+}
 var nickOfPrefix = (prefix) => {
   if (prefix === void 0) return "";
   const bang = prefix.indexOf("!");
@@ -1295,6 +1301,15 @@ function createDispatcher(store, hooks = {}, logger2) {
     const text = `ops: ${agent} denied ${action}: ${reason}${detail === void 0 ? "" : ` (${detail})`}`;
     if (channel2 !== null) store.addLine(channel2, "server", "system", text);
     else store.diagnostics.unresolvedDenials += 1;
+  };
+  const onRefusal = (numeric, target, text) => {
+    const redact = (s) => logger2?.redact(s) ?? s;
+    const reason = redact(cleanServerText(text, REFUSAL_REASON_MAX));
+    const where = redact(cleanServerText(target, REFUSAL_TARGET_MAX));
+    logger2?.warn("server refused a command", { numeric, target: where, reason });
+    if (isValidChannel(target) && store.channel(target) !== void 0) {
+      store.addLine(target, "server", "system", `Server refused (${numeric}): ${reason === "" ? "no reason given" : reason}`);
+    }
   };
   const onNotice = (message) => {
     const target = message.params[0] ?? "";
@@ -1507,6 +1522,7 @@ function createDispatcher(store, hooks = {}, logger2) {
       case "475":
       case "481":
       case "482":
+        onRefusal(message.command, p.length >= 3 ? p[1] ?? "" : "", p[p.length - 1] ?? "");
         store.emit({ type: "server-error", numeric: message.command, target: p[1] ?? "", text: p[p.length - 1] ?? "" });
         break;
       case "318":
@@ -1524,7 +1540,11 @@ function createDispatcher(store, hooks = {}, logger2) {
         break;
       case "PRIVMSG": {
         const target = p[0] ?? "";
-        if (isValidChannel(target) && admit(target)) store.addLine(target, nickOfPrefix(message.prefix) || "server", "privmsg", stripFormatting(p[1] ?? ""));
+        if (!isValidChannel(target) || !admit(target)) break;
+        const from = nickOfPrefix(message.prefix) || "server";
+        const text = stripFormatting(p[1] ?? "");
+        if (isOwn(from) && store.consumeOwnEcho(target, text)) break;
+        store.addLine(target, from, "privmsg", text);
         break;
       }
       case "NOTICE":
@@ -1772,6 +1792,8 @@ var RING_CAPACITY = 500;
 var COMMIT_LIMIT = 50;
 var INBOX_LIMIT = 200;
 var DEDUP_MS = 6e4;
+var OWN_ECHO_MS = 3e4;
+var OWN_MARKER_LIMIT = 20;
 var DROP_AFTER_LEAVE_MS = 10 * 6e4;
 var Store = class {
   clock;
@@ -1780,6 +1802,7 @@ var Store = class {
   inboxItems = [];
   handlers = /* @__PURE__ */ new Map();
   anyHandlers = /* @__PURE__ */ new Set();
+  ownMarkers = [];
   inboxCounter = 0;
   rev = 0;
   /** Counters for diagnostics only. */
@@ -1917,6 +1940,38 @@ var Store = class {
     const line = channel2.ring.push((seq) => ({ seq, ts, from, kind, text: clean }));
     this.emit({ type: "line", channel: channel2.name, line });
     return line;
+  }
+  // ---- own messages ------------------------------------------------------------
+  /**
+   * Record a message the bridge itself sent (`say`). The server does not echo our own PRIVMSG, so without this the
+   * message would never reach the log. Only a tracked channel gets a line: `say` must not make the store grow. The line
+   * is a normal `privmsg` from our own nick, and a marker lets `consumeOwnEcho` swallow an echo if a server ever sends one.
+   */
+  addOwnMessage(channelName, text) {
+    if (this.channel(channelName) === void 0) return null;
+    const line = this.addLine(channelName, this.ownNick, "privmsg", text);
+    this.pruneOwnMarkers();
+    this.ownMarkers.push({ key: this.echoKey(channelName, line.text), at: this.clock.now() });
+    if (this.ownMarkers.length > OWN_MARKER_LIMIT) this.ownMarkers.shift();
+    return line;
+  }
+  /** True once, and only within OWN_ECHO_MS of the send, for a PRIVMSG that repeats an own message (an echo). */
+  consumeOwnEcho(channelName, text) {
+    this.pruneOwnMarkers();
+    const key = this.echoKey(channelName, stripFormatting(text));
+    const index = this.ownMarkers.findIndex((m) => m.key === key);
+    if (index === -1) return false;
+    this.ownMarkers.splice(index, 1);
+    return true;
+  }
+  echoKey(channelName, cleanText) {
+    return `${this.key(channelName)}\0${cleanText}`;
+  }
+  pruneOwnMarkers() {
+    const now = this.clock.now();
+    for (let i = this.ownMarkers.length - 1; i >= 0; i -= 1) {
+      if (now - (this.ownMarkers[i]?.at ?? 0) >= OWN_ECHO_MS) this.ownMarkers.splice(i, 1);
+    }
   }
   // ---- members -----------------------------------------------------------------
   setMember(channel2, nick2, modes) {
@@ -3171,6 +3226,7 @@ var sayTool = defineTool({
     if (!taken.ok) return rateLimited(`say is limited to ${SAY_LIMIT} lines per minute in total`, taken.retryAfterSec);
     const failed = trySend(ctx, "PRIVMSG", [args.channel, args.text], "low");
     if (failed !== null) return failed;
+    ctx.store.addOwnMessage(args.channel, args.text);
     return textResult(`Sent to ${args.channel}.`, { sent: true, channel: args.channel });
   }
 });
