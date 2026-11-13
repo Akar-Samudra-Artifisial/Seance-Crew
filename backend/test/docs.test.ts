@@ -179,6 +179,21 @@ describe("docs/WRITEUP.md", () => {
     for (const part of ["never logged", "Untrusted channel text", "`confirm: true`", "512 bytes", "One connection", "X-KiroCrew-Proxy", "Origin", "Accepted risk"]) expect(writeup, part).toContain(part);
   });
 
+  // Kiroween 2026 rules, section 4: disclose any pre-existing code or work incorporated into the project.
+  it("discloses the vendored code in a Pre-existing code section between How Kiro built it and Try it", () => {
+    const h = headings(writeup);
+    expect(h).toContain("Pre-existing code");
+    expect(h.indexOf("Pre-existing code")).toBe(h.indexOf("How Kiro built it") + 1);
+    expect(h.indexOf("Try it")).toBe(h.indexOf("Pre-existing code") + 1);
+    const section = /^## Pre-existing code\r?\n([\s\S]*?)(?=^## )/m.exec(writeup)?.[1] ?? "";
+    expect(section).toContain("backend/vendor/irc-protocol");
+    expect(section).toContain("https://github.com/Akar-Samudra-Artifisial/Seance");
+    expect(section).toContain("MIT");
+    expect(section).toMatch(/unchanged/);
+    expect(section).toContain("../backend/vendor/irc-protocol/NOTICE");
+    expect(existsSync(path.join(root, "backend/vendor/irc-protocol/NOTICE"))).toBe(true);
+  });
+
   it("points to real specs, steering files and hooks", () => {
     for (const spec of ["irc-bridge", "mcp-tools", "dashboard-ui", "steward-agent", "demo-writeup"]) {
       expect(writeup, spec).toContain(`\`${spec}\``);

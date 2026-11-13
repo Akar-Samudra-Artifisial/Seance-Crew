@@ -57,6 +57,10 @@ The app was built with Kiro specs, steering files and hooks.
 
 The system this app steers is described in the [Séance repository](https://github.com/Akar-Samudra-Artifisial/Seance).
 
+## Pre-existing code
+
+One part of this project is not new: `backend/vendor/irc-protocol/` (its `src/` and `test/`) is copied unchanged from `packages/irc-protocol` in the [Séance repository](https://github.com/Akar-Samudra-Artifisial/Seance), under the MIT license, Copyright (c) 2026 Akar Samudra Artifisial. Séance is by the same team and was also made during the Kiroween 2026 period (repository created 2026-11-05). We reuse the package so this client parses and serializes IRC lines exactly like the Séance server. Séance Crew itself started on 2026-11-10, and everything outside `backend/vendor/` was written for this project. Source and terms are in [the NOTICE file](../backend/vendor/irc-protocol/NOTICE). Build and test tools (esbuild, TypeScript, Vitest) are ordinary dev dependencies, and `@kirocrew/app-sdk` is provided by the host.
+
 ## Try it
 
 ```sh
