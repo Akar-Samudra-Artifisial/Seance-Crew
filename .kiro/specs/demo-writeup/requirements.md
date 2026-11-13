@@ -20,11 +20,11 @@ Judge-facing deliverables for the Kiroween 2026 "Best Kiro Crew App" bonus: a 60
 #### Acceptance Criteria
 
 1. THE repository SHALL contain `docs/DEMO.md` describing a scenario that takes 60 to 90 seconds when performed, with a time estimate per step.
-2. THE scenario SHALL start in Crew chat with the exact prompt "summon coder into #crew-demo and ask it to fix the failing test".
-3. THE scenario SHALL show on the dashboard, in this order: the `worktree ready` event for `#crew-demo`, the needs-op inbox item, "Grant op" with the confirmation dialog, `coder committed <sha>`, and live credits.
+2. THE scenario SHALL start in Crew chat with the exact prompt "summon coder into #crew-live and ask it to fix the failing test".
+3. THE scenario SHALL show on the dashboard, in this order: the `worktree ready` event for `#crew-live`, the needs-op inbox item, "Grant op" with the confirmation dialog, `coder committed <sha>`, and live credits.
 4. THE scenario SHALL end with the chat prompt "exorcise coder" and the `worktree reset` notice (`session closed, worktree reset to <sha>`).
 5. FOR every step, THE document SHALL give the exact command or prompt to type and the expected screen text, using placeholders (`<sha>`, `<X.XX>`) only where the value varies.
-6. THE document SHALL list prerequisites: Kiro Crew installed and signed in, the app installed and trusted (`kirocrew config set agent.apps_trusted '["seance-crew"]'`), config (`host`, `nick`, `secret`) set, an account allowed to invite (`SEANCE_INVITERS`), the crew nick opped in `#crew-demo` so that needs-op notices reach it, and a repository with one failing test on the Séance server.
+6. THE document SHALL list prerequisites: Kiro Crew installed and signed in, the app installed and trusted (`kirocrew config set agent.apps_trusted '["seance-crew"]'`), config (`host`, `nick`, `secret`) set, an account allowed to invite (`SEANCE_INVITERS`), the crew nick opped in `#crew-live` so that needs-op notices reach it, and a channel that has never been used on the Séance server (a fresh worktree of a repository with one failing test, and no agent memory), with another unused channel name for a retake.
 7. THE document SHALL include a recovery section: what to do when the invite is refused, when the agent stays "starting", when no needs-op item appears, and how to reset the channel.
 8. THE document SHALL NOT contain a secret, a real account name other than the default `crew`, or the forbidden trademark word.
 

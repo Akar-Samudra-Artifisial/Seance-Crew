@@ -12,7 +12,7 @@ Run these last, after `irc-bridge`, `mcp-tools`, `dashboard-ui` and `steward-age
   - _Requirements: 4.1_
 
 - [x] 2. Write `docs/DEMO.md`
-  - Follow the structure and table in the design; copy the exact UI strings and notice formats from the implemented code. Include prerequisites (crew nick `+o` in `#crew-demo`), recovery, and cleanup.
+  - Follow the structure and table in the design; copy the exact UI strings and notice formats from the implemented code. Include prerequisites (crew nick `+o` in `#crew-live`), recovery, and cleanup.
   - Manual check: perform the scenario once against a test channel with a stopwatch, fix timings and screen text, and note the run date in the PR description.
   - Test: enable the DEMO checks in `docs.test.ts` (headings, both chat prompts verbatim, 8 table rows, no secret, no forbidden word).
   - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8_

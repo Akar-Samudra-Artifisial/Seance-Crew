@@ -33,11 +33,11 @@ Script, with target timings:
 
 | # | Time | Where | Action | Expected screen text |
 | --- | --- | --- | --- | --- |
-| 1 | 0:00 | Crew chat | Type: `summon coder into #crew-demo and ask it to fix the failing test` | Steward calls `summon`; reply contains `coder` and `#crew-demo`; tool result `ready: true` or "still starting" |
-| 2 | 0:10 | Dashboard | Open `/apps/seance-crew` | Channel card `#crew-demo`, agent row `coder`, status banner `registered`; log line `worktree ready: <dir> @ <sha>` |
+| 1 | 0:00 | Crew chat | Type: `summon coder into #crew-live and ask it to fix the failing test` | Steward calls `summon`; reply contains `coder` and `#crew-live`; tool result `ready: true` or "still starting" |
+| 2 | 0:10 | Dashboard | Open `/apps/seance-crew` | Channel card `#crew-live`, agent row `coder`, status banner `registered`; log line `worktree ready: <dir> @ <sha>` |
 | 3 | 0:20 | Crew chat | Steward asks to grant `+v` (confirm yes), then prompts `coder` via `say` | Agent row shows `+v`; log shows the prompt |
 | 4 | 0:30 | Dashboard | Wait for the inbox | Needs-op item: `coder denied <action>: needs-op` |
-| 5 | 0:40 | Dashboard | Click "Grant op", then "Confirm" in the dialog | Dialog text `Grant +o to coder in #crew-demo?`; after confirm, agent row `+o`, item disappears |
+| 5 | 0:40 | Dashboard | Click "Grant op", then "Confirm" in the dialog | Dialog text `Grant +o to coder in #crew-live?`; after confirm, agent row `+o`, item disappears |
 | 6 | 0:55 | Dashboard | Watch the card | Commit row `coder committed <sha> (<n> file(s))`; credits `<X.XX>` rising |
 | 7 | 1:10 | Crew chat | Type: `exorcise coder` | Steward asks to confirm; after yes: `session closed, worktree reset to <sha>`, `<N> file(s) reverted · <X.XX> credits used` |
 | 8 | 1:20 | Dashboard | Look at the card | Agent row gone, final credits shown, summary card unchanged ("No summary yet" or the last daily summary) |

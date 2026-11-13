@@ -112,7 +112,7 @@ describe("docs/DEMO.md", () => {
   });
 
   it("contains both chat prompts verbatim", () => {
-    expect(demo).toContain("summon coder into #crew-demo and ask it to fix the failing test");
+    expect(demo).toContain("summon coder into #crew-live and ask it to fix the failing test");
     expect(demo).toContain("exorcise coder");
   });
 
@@ -129,18 +129,28 @@ describe("docs/DEMO.md", () => {
   });
 
   it("copies the confirmation dialog strings from the UI", () => {
-    expect(demo).toContain("Grant +o to coder in #crew-demo?");
-    expect(demo).toContain("Exorcise coder from #crew-demo?");
-    expect(demo).toContain("Session closed in #crew-demo; worktree reset to <sha>.");
+    expect(demo).toContain("Grant +o to coder in #crew-live?");
+    expect(demo).toContain("Exorcise coder from #crew-live?");
+    expect(demo).toContain("Session closed in #crew-live; worktree reset to <sha>.");
+  });
+
+  it("asks for a channel that was never used, and for another unused channel on a retake", () => {
+    // A reused channel keeps its worktree and the agent's memory, and sends no `worktree ready` notice.
+    expect(demo).toMatch(/`#crew-live` has never been used on the Séance server/);
+    expect(demo).toMatch(/fresh worktree/);
+    expect(demo).toMatch(/no memory of earlier sessions/);
+    expect(demo).toMatch(/For a retake, use another unused channel name \(for example `#crew-live2`\) in every step/);
+    // The old, used channel name (built from pieces so a search for it finds nothing here).
+    expect(demo).not.toContain(["crew", "demo"].join("-"));
   });
 
   it("lists the prerequisites", () => {
     expect(demo).toContain("kirocrew config set agent.apps_trusted '[\"seance-crew\"]'");
     expect(demo).toContain("SEANCE_INVITERS");
-    expect(demo).toMatch(/`crew` nick is a member of `#crew-demo`/);
+    expect(demo).toMatch(/`crew` nick is a member of `#crew-live`/);
     expect(demo).toMatch(/does not need `\+o` to see the needs-op item/);
     expect(demo).toMatch(/ask the steward to `say` the task again/);
-    expect(demo).toMatch(/failing test/);
+    expect(demo).toMatch(/exactly one failing test/);
   });
 
   it("reflects that only the read-only tools are auto-approved", () => {
