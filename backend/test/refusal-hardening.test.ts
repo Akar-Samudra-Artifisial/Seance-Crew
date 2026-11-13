@@ -1,7 +1,7 @@
 // refusal-hardening: the three Minor findings from the review of `onRefusal`.
 import { afterEach, describe, expect, it } from "vitest";
 import type { BridgeEvent } from "../src/irc/store.js";
-import { cutText, REFUSAL_REASON_MAX, REFUSAL_TARGET_MAX } from "../src/irc/dispatch.js";
+import { cutText, REFUSAL_REASON_MAX, REFUSAL_TARGET_MAX, refusalKey } from "../src/irc/dispatch.js";
 import { FakeIrcd } from "./fakeIrcd.js";
 import { bootMcp, cleanupMcp, MCP_SECRET, textOf } from "./mcpHelpers.js";
 
@@ -282,5 +282,149 @@ describe("identical refusals are rate limited (Requirement 3)", () => {
     const pending = h.clock.pending;
     for (let i = 0; i < 30; i += 1) refuse(h, "404", "#fix", "x");
     expect(h.clock.pending).toBe(pending);
+  });
+});
+
+describe("the global limit and safe eviction (Requirement 5)", () => {
+  const summaries = (h: Harness) => h.logs.map((l) => JSON.parse(l) as Record<string, unknown>).filter((r) => typeof r["msg"] === "string" && (r["msg"] as string).includes("refusal reports suppressed (global limit)"));
+
+  it("200 refusals for 200 different targets within 10 s give at most 20 reports and one global summary after the window", async () => {
+    const h = await bootMcp({ ircd: world() });
+    const events: BridgeEvent[] = [];
+    h.app.store.onAny((e) => events.push(e));
+    for (let i = 0; i < 200; i += 1) {
+      refuse(h, "404", `#target${i}`, "Cannot send to channel");
+      h.clock.advance(40); // 8 s in total
+    }
+    expect(refusalLogs(h)).toHaveLength(20);
+    expect(summaries(h)).toHaveLength(0); // nothing is written while the budget is used up
+    expect(events.filter((e) => e.type === "server-error")).toHaveLength(200); // every reply still reaches the waiters
+
+    h.clock.advance(10_000);
+    refuse(h, "404", "#after", "Cannot send to channel");
+    expect(summaries(h)).toHaveLength(1);
+    expect(summaries(h)[0]).toMatchObject({ level: "warn", msg: "180 refusal reports suppressed (global limit)", suppressed: 180 });
+    expect(refusalLogs(h)).toHaveLength(21);
+    // The summary comes first, then the report it belongs to.
+    const order = h.logs.map((l) => (JSON.parse(l) as { msg: string }).msg);
+    expect(order.indexOf("180 refusal reports suppressed (global limit)")).toBeLessThan(order.lastIndexOf("server refused a command"));
+  });
+
+  it("the summary is log only: no channel line, and it is written once", async () => {
+    const h = await bootMcp({ ircd: world() });
+    for (let i = 0; i < 30; i += 1) refuse(h, "404", `#t${i}`, "x");
+    h.clock.advance(11_000);
+    refuse(h, "404", "#fix", "y");
+    refuse(h, "403", "#fix", "z");
+    expect(summaries(h)).toHaveLength(1);
+    expect(serverLines(h).map((l) => l.text).join("\n")).not.toContain("global limit");
+  });
+
+  it("a tracked channel's key is not reset by a flood of other targets while its window is open", async () => {
+    const h = await bootMcp({ ircd: world() });
+    refuse(h, "404", "#fix", "Cannot send to channel"); // the tracked channel's key opens
+    for (let i = 0; i < 250; i += 1) refuse(h, "404", `#flood${i}`, "x"); // 250 new keys: far more than the 100 the map holds
+    h.clock.advance(5_000);
+    refuse(h, "404", "#fix", "Cannot send to channel"); // still inside its window
+    expect(serverLines(h)).toHaveLength(1);
+    expect(refusalLogs(h).filter((r) => r["target"] === "#fix")).toHaveLength(1);
+  });
+
+  it("the held count of an expired key that is dropped reaches the next global summary", async () => {
+    const h = await bootMcp({ ircd: world() });
+    // 20 reports in one window, each its own key; the first key also holds back 6 repeats.
+    refuse(h, "404", "#fix", "loud");
+    for (let i = 0; i < 6; i += 1) refuse(h, "404", "#fix", "loud");
+    for (let i = 0; i < 19; i += 1) refuse(h, "404", `#k${i}`, "x");
+    // 120 more keys in a later window fill the map (100 keys) and force the old, expired ones out.
+    h.clock.advance(11_000);
+    for (let i = 0; i < 20; i += 1) refuse(h, "404", `#late${i}`, "x");
+    h.clock.advance(11_000);
+    for (let i = 0; i < 20; i += 1) refuse(h, "404", `#later${i}`, "x");
+    h.clock.advance(11_000);
+    for (let i = 0; i < 20; i += 1) refuse(h, "404", `#latest${i}`, "x");
+    h.clock.advance(11_000);
+    for (let i = 0; i < 20; i += 1) refuse(h, "404", `#final${i}`, "x");
+    h.clock.advance(11_000);
+    refuse(h, "404", "#last", "x");
+    refuse(h, "404", "#last2", "x");
+    // The map held exactly 100 keys (20 per window, five windows). #last needed room, so the oldest expired key (#fix, with
+    // 6 repeats held back) was dropped and its count went to the one summary that comes with the next report.
+    expect(summaries(h)).toHaveLength(1);
+    expect(summaries(h)[0]).toMatchObject({ msg: "6 refusal reports suppressed (global limit)", suppressed: 6 });
+    expect(refusalLogs(h).map((r) => r["target"])).toContain("#last");
+    expect(refusalLogs(h).map((r) => r["target"])).toContain("#last2");
+  });
+
+  it("the Séance secret never appears in a summary", async () => {
+    const h = await bootMcp({ ircd: world() });
+    for (let i = 0; i < 40; i += 1) refuse(h, "404", `#t${i}`, MCP_SECRET);
+    h.clock.advance(11_000);
+    refuse(h, "404", "#fix", "again");
+    expectNoSecret(h.logs.join("\n"));
+  });
+});
+
+describe("441 and 443 keys (Requirement 6) and a bounded key (Requirement 5.6)", () => {
+  it("two different nicks in the same channel are both reported", async () => {
+    const h = await bootMcp({ ircd: world() });
+    refuse(h, "441", "coder #fix", "They aren't on that channel");
+    refuse(h, "441", "reviewer #fix", "They aren't on that channel");
+    expect(refusalLogs(h)).toHaveLength(2);
+    expect(serverLines(h).map((l) => l.text)).toEqual([
+      "Server refused (441): coder: They aren't on that channel",
+      "Server refused (441): reviewer: They aren't on that channel",
+    ]);
+    // The same nick again, in the same window, is still held back; the case of the nick does not matter.
+    refuse(h, "441", "CODER #fix", "They aren't on that channel");
+    expect(refusalLogs(h)).toHaveLength(2);
+  });
+
+  it("443 is keyed by nick too", async () => {
+    const h = await bootMcp({ ircd: world() });
+    refuse(h, "443", "coder #fix", "is already on channel");
+    refuse(h, "443", "reviewer #fix", "is already on channel");
+    expect(serverLines(h)).toHaveLength(2);
+  });
+
+  it("an invalid nick is left out of the key, the log entry and the line, and the channel is still used", async () => {
+    const h = await bootMcp({ ircd: world() });
+    refuse(h, "441", "bad\u0007nick #fix", "They aren't on that channel");
+    expect(serverLines(h).at(-1)?.text).toBe("Server refused (441): They aren't on that channel");
+    expect(refusalLogs(h)[0]).toMatchObject({ numeric: "441", target: "#fix" });
+    expect(refusalLogs(h)[0]).not.toHaveProperty("nick");
+    // Two different invalid nicks share the nickless key, so the second is held back.
+    refuse(h, "441", "also,bad #fix", "They aren't on that channel");
+    expect(refusalLogs(h)).toHaveLength(1);
+  });
+
+  it("a nick longer than the nick limit is not used either", async () => {
+    const h = await bootMcp({ ircd: world() });
+    refuse(h, "441", `${"n".repeat(60)} #fix`, "They aren't on that channel");
+    expect(refusalLogs(h)[0]).not.toHaveProperty("nick");
+  });
+
+  it("refusalKey stays bounded for a 5,000 character target, and ignores case", () => {
+    const key = refusalKey("404", "#" + "A".repeat(5_000), "");
+    expect(key.length).toBeLessThanOrEqual("404 ".length + REFUSAL_TARGET_MAX);
+    expect(key).toBe(`404 #${"a".repeat(REFUSAL_TARGET_MAX - 1)}`);
+    const withNick = refusalKey("441", "#" + "B".repeat(5_000), "Coder");
+    expect(withNick.length).toBeLessThanOrEqual("441 ".length + REFUSAL_TARGET_MAX + 1 + 30);
+    expect(withNick.endsWith(" coder")).toBe(true);
+  });
+
+  it("a refusal with a 5,000 character target is reported with a cut target and does not grow the key", async () => {
+    const h = await bootMcp({ ircd: world() });
+    h.ircd.sendLines(h.ircd.last, [`:seance.local 461 crew ${"T".repeat(5_000)} :Not enough parameters`]);
+    h.ircd.run();
+    expect(String(refusalLogs(h)[0]?.["target"]).length).toBeLessThanOrEqual(REFUSAL_TARGET_MAX);
+  });
+
+  it("a different numeric in the same channel is still its own key", async () => {
+    const h = await bootMcp({ ircd: world() });
+    refuse(h, "441", "coder #fix", "a");
+    refuse(h, "443", "coder #fix", "b");
+    refuse(h, "442", "#fix", "c");
+    expect(serverLines(h)).toHaveLength(3);
   });
 });

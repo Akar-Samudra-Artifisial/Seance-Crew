@@ -1163,33 +1163,77 @@ function parseNotice(input, ownNick) {
 // backend/src/irc/refusal-limit.ts
 var REFUSAL_WINDOW_MS = 1e4;
 var REFUSAL_MAX_KEYS = 100;
+var REFUSAL_GLOBAL_BUDGET = 20;
+var NOT_REPORTED = { report: false, suppressed: 0, summary: 0 };
 var RefusalLimiter = class {
-  constructor(windowMs = REFUSAL_WINDOW_MS, maxKeys = REFUSAL_MAX_KEYS) {
+  constructor(windowMs = REFUSAL_WINDOW_MS, maxKeys = REFUSAL_MAX_KEYS, globalBudget = REFUSAL_GLOBAL_BUDGET) {
     this.windowMs = windowMs;
     this.maxKeys = maxKeys;
+    this.globalBudget = globalBudget;
   }
   windowMs;
   maxKeys;
+  globalBudget;
   slots = /* @__PURE__ */ new Map();
+  globalStart = Number.NEGATIVE_INFINITY;
+  globalCount = 0;
+  globalSuppressed = 0;
   /** The number of keys remembered (never above `maxKeys`). */
   get size() {
     return this.slots.size;
   }
+  /** Refusals held back by the global limit that no summary has told about yet. */
+  get pendingSummary() {
+    return this.globalSuppressed;
+  }
   /** Record one refusal at time `now`. */
   note(key, now) {
+    if (!this.open(this.globalStart, now)) {
+      this.globalStart = now;
+      this.globalCount = 0;
+    }
     const slot = this.slots.get(key);
-    if (slot !== void 0 && now - slot.start < this.windowMs && now >= slot.start) {
+    if (slot !== void 0 && this.open(slot.start, now)) {
       this.slots.set(key, { start: slot.start, held: slot.held + 1 });
-      return { report: false, suppressed: 0 };
+      return NOT_REPORTED;
+    }
+    if (this.globalCount >= this.globalBudget) {
+      this.globalSuppressed += 1;
+      return NOT_REPORTED;
+    }
+    if (slot === void 0 && !this.makeRoom(now)) {
+      this.globalSuppressed += 1;
+      return NOT_REPORTED;
     }
     this.slots.delete(key);
-    while (this.slots.size >= this.maxKeys) {
-      const oldest = this.slots.keys().next();
-      if (oldest.done === true) break;
-      this.slots.delete(oldest.value);
-    }
     this.slots.set(key, { start: now, held: 0 });
-    return { report: true, suppressed: slot?.held ?? 0 };
+    this.globalCount += 1;
+    const summary = this.globalSuppressed;
+    this.globalSuppressed = 0;
+    return { report: true, suppressed: slot?.held ?? 0, summary };
+  }
+  open(start, now) {
+    return now >= start && now - start < this.windowMs;
+  }
+  /**
+   * Make space for one more key by dropping expired slots, oldest first. A slot whose window is still open is never
+   * dropped. The held count of a dropped slot goes to the global counter so it is not lost. Returns false when the map
+   * is full and every slot is still open.
+   */
+  makeRoom(now) {
+    while (this.slots.size >= this.maxKeys) {
+      let expired;
+      for (const [key, slot] of this.slots) {
+        if (!this.open(slot.start, now)) {
+          expired = key;
+          break;
+        }
+      }
+      if (expired === void 0) return false;
+      this.globalSuppressed += this.slots.get(expired)?.held ?? 0;
+      this.slots.delete(expired);
+    }
+    return true;
   }
 };
 
@@ -1247,6 +1291,10 @@ function cutText(text, max) {
 function cleanServerText(text, max) {
   const clean = stripFormatting(text).replace(/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/g, " ").replace(/\s+/g, " ").trim();
   return cutText(clean, max);
+}
+function refusalKey(numeric, target, nick2) {
+  const base = `${numeric} ${irc_lower(target.slice(0, REFUSAL_TARGET_MAX))}`;
+  return nick2 === "" ? base : `${base} ${irc_lower(nick2)}`;
 }
 var nickOfPrefix = (prefix) => {
   if (prefix === void 0) return "";
@@ -1341,13 +1389,14 @@ function createDispatcher(store, hooks = {}, logger2) {
   };
   const onRefusal = (numeric, params) => {
     const nickFirst = (numeric === "441" || numeric === "443") && params.length >= 4;
-    const nickRaw = nickFirst ? params[1] ?? "" : "";
+    const nickRaw = nickFirst && isValidNick(params[1] ?? "") ? params[1] ?? "" : "";
     const target = nickFirst ? params[2] ?? "" : params.length >= 3 ? params[1] ?? "" : "";
     const text = params[params.length - 1] ?? "";
     const redact = (s) => logger2?.redact(s) ?? s;
     const safe = (raw, max) => cutText(redact(cleanServerText(redact(raw), Number.POSITIVE_INFINITY)), max);
-    const decision = refusalLimiter.note(`${numeric} ${irc_lower(target)}`, store.now());
+    const decision = refusalLimiter.note(refusalKey(numeric, target, nickRaw), store.now());
     if (!decision.report) return;
+    if (decision.summary > 0) logger2?.warn(`${decision.summary} refusal reports suppressed (global limit)`, { suppressed: decision.summary });
     const reason = safe(text, REFUSAL_REASON_MAX);
     const where = safe(target, REFUSAL_TARGET_MAX);
     const nick2 = nickRaw === "" ? "" : safe(nickRaw, REFUSAL_TARGET_MAX);

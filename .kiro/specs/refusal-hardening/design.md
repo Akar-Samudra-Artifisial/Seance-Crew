@@ -68,9 +68,35 @@ class RefusalLimiter {
 - A summary is not sent on its own when the window closes, because that would need a timer. The count is told on the next report of the key, as the spec asks ("or a single summary when the window closes on the next refusal").
 - `onRefusal` adds ` (N more suppressed)` after the cut reason when `suppressed > 0`, in the log entry (`reason`, plus a `suppressed` field) and in the channel line.
 
+### Global budget and safe eviction (Requirements 5 and 6)
+
+The per-key limit alone can be bypassed: a server that sends refusals for 100 or more different targets makes the map evict its oldest keys, so each new target is reported, and a tracked channel's own key can be evicted and reset. The limiter now has a second limit and a stricter eviction rule.
+
+```ts
+note(key, now): { report: boolean; suppressed: number; summary: number }
+```
+
+1. **Global window.** `globalStart` and `globalCount` track one 10 s window across all keys (a clock that steps back opens a new one). The budget is `REFUSAL_GLOBAL_BUDGET = 20` reports per window.
+2. **Open key.** A refusal for a key whose window is still open is counted on the key and is never reported. It is checked before the budget, and an open key is never evicted.
+3. **New window for the key, or a new key.** If the global budget is used up, the refusal is not reported and `globalSuppressed` goes up. The key's slot is left as it is, so its held count is not lost.
+4. **Room for a new key.** If the map holds 100 keys, only expired slots are dropped, oldest first. The `held` count of a dropped slot is added to `globalSuppressed`, so the "(N more suppressed)" figure is not silently lost (finding 2). If every slot is still open, the new key is not stored and the refusal counts in `globalSuppressed`.
+5. **Report.** The key is stored (moved to the newest end), `globalCount` goes up, and the decision carries `suppressed` (the key's held count from its closed window) and `summary` (the value of `globalSuppressed`, which is then reset).
+
+`onRefusal` writes one `warn` entry "<N> refusal reports suppressed (global limit)" when `summary > 0`, before the report it came with. It is log only: no channel line, and it does not count against the budget. There is no timer, so a summary appears with the next allowed report and not on its own; if no further refusal comes, the count stays in memory.
+
+The key (`refusalKey` in `dispatch.ts`) is built from the cut, lower-cased target (at most 60 characters, a plain slice), so a long server-chosen target cannot grow memory. For 441 and 443 it also holds the lower-cased nick, but only when `isValidNick(nick)` (at most 30 characters); two nicks in one channel are then two keys (finding 3). An invalid nick is left out of the key, the log entry and the channel line.
+
+The `server-error` event is emitted before any of this and is never limited. Its payload does not change.
+
+#### Expectations changed on purpose
+
+- `refusal-limit.test.ts` "keeps at most 100 keys and drops the oldest first" assumed that open keys are evicted oldest first. It now fills the map with keys whose windows are open and checks that a new key is not stored and not reported, and a second test checks that expired keys are dropped oldest first.
+- `refusal-limit.test.ts` "a renewed key moves to the newest end" used times that are all inside one window; it now spaces the times so the windows are expired when the key is renewed.
+- Tests that sent more than 20 distinct keys in one window (none in `refusals.test.ts` or `refusal-hardening.test.ts`) would now be limited; the existing ones use at most 4 keys, so none changed.
+
 ## Data Models
 
-No persistent data, no API field. The limiter holds at most 100 small records in memory, and it is created with the dispatcher.
+No persistent data, no API field. The limiter holds at most 100 small records and four numbers in memory, and it is created with the dispatcher.
 
 ## Error Handling
 
@@ -97,6 +123,18 @@ For 441 and 443 with a tracked channel in the third parameter there is exactly o
 The `server-error` event is emitted once per refusal, with an unchanged payload, whether or not the report was suppressed.
 
 **Validates: Requirements 2.4, 3.6**
+
+### Property 5: The report rate is bounded however many targets there are
+
+In any window of 10 seconds at most 20 reports are written, and a key with an open window is never dropped or reset.
+
+**Validates: Requirements 5.1, 5.3, 5.4**
+
+### Property 6: Held-back counts are not lost
+
+A count held on a key that is dropped, and a refusal that was not stored or not reported, reach the next global summary.
+
+**Validates: Requirements 5.2, 5.5**
 
 ### Property 4: The report rate per key is bounded
 

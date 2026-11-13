@@ -73,6 +73,16 @@ export function cleanServerText(text: string, max: number): string {
   return cutText(clean, max);
 }
 
+/**
+ * The key a refusal is limited by: the numeric, the target cut to REFUSAL_TARGET_MAX characters and lower-cased (so a
+ * long server-chosen target cannot grow memory), and for 441 and 443 the lower-cased nick (two nicks in one channel are
+ * two keys). `nick` is only passed when it is a valid nick, so it is at most 30 characters.
+ */
+export function refusalKey(numeric: string, target: string, nick: string): string {
+  const base = `${numeric} ${irc_lower(target.slice(0, REFUSAL_TARGET_MAX))}`;
+  return nick === "" ? base : `${base} ${irc_lower(nick)}`;
+}
+
 export const nickOfPrefix = (prefix: string | undefined): string => {
   if (prefix === undefined) return "";
   const bang = prefix.indexOf("!");
@@ -187,7 +197,8 @@ export function createDispatcher(store: Store, hooks: DispatchHooks = {}, logger
     // 441 (ERR_USERNOTINCHANNEL) and 443 (ERR_USERONCHANNEL) are `<me> <nick> <channel> :text`: the nick comes first.
     // Every other refusal is `<me> <target> :text`, and a reply with no target (481) is `<me> :text`.
     const nickFirst = (numeric === "441" || numeric === "443") && params.length >= 4;
-    const nickRaw = nickFirst ? (params[1] ?? "") : "";
+    // Only a valid nick is used (in the key, the log entry and the channel line); anything else is left out.
+    const nickRaw = nickFirst && isValidNick(params[1] ?? "") ? (params[1] ?? "") : "";
     const target = nickFirst ? (params[2] ?? "") : params.length >= 3 ? (params[1] ?? "") : "";
     const text = params[params.length - 1] ?? "";
     // The logger's redaction (the Séance secret, PASS lines) also covers the text that goes into the channel log.
@@ -195,9 +206,12 @@ export function createDispatcher(store: Store, hooks: DispatchHooks = {}, logger
     // secret that crosses the cut position is replaced as a whole and never half shown.
     const redact = (s: string): string => logger?.redact(s) ?? s;
     const safe = (raw: string, max: number): string => cutText(redact(cleanServerText(redact(raw), Number.POSITIVE_INFINITY)), max);
-    // At most one report per (numeric, channel or target) per 10 s. The `server-error` event is not limited (see the case).
-    const decision = refusalLimiter.note(`${numeric} ${irc_lower(target)}`, store.now());
+    // At most one report per key per 10 s, and at most 20 reports per 10 s across all keys. The `server-error` event is
+    // not limited (see the case).
+    const decision = refusalLimiter.note(refusalKey(numeric, target, nickRaw), store.now());
     if (!decision.report) return;
+    // Refusals the global limit held back since the last report: one summary entry, log only, before the report itself.
+    if (decision.summary > 0) logger?.warn(`${decision.summary} refusal reports suppressed (global limit)`, { suppressed: decision.summary });
     const reason = safe(text, REFUSAL_REASON_MAX);
     const where = safe(target, REFUSAL_TARGET_MAX);
     const nick = nickRaw === "" ? "" : safe(nickRaw, REFUSAL_TARGET_MAX);

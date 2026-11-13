@@ -2,7 +2,7 @@
 
 ## Overview
 
-Fixes three Minor findings from the code review of `onRefusal` (`demo-say-fixes`). Depends on `irc-bridge`, `mcp-tools` and `demo-say-fixes`. Tasks run in the order listed, one at a time, tests included. After each task `pnpm typecheck && pnpm test` must be green. Never edit `backend/vendor/irc-protocol/`, treat channel text as untrusted, and never log the secret.
+Fixes three Minor findings from the code review of `onRefusal` (`demo-say-fixes`), tasks 1 to 4, and then one Medium finding from the security review and two Minor findings from the review of commit d11ab18, tasks 5 to 7. Depends on `irc-bridge`, `mcp-tools` and `demo-say-fixes`. Tasks run in the order listed, one at a time, tests included. After each task `pnpm typecheck && pnpm test` must be green. Never edit `backend/vendor/irc-protocol/`, treat channel text as untrusted, and never log the secret.
 
 ## Tasks
 
@@ -25,6 +25,20 @@ Fixes three Minor findings from the code review of `onRefusal` (`demo-say-fixes`
   - Add `refusal-hardening` to the spec lists in `AGENTS.md`, `README.md` and `docs/WRITEUP.md` (seven specs).
   - Run `pnpm typecheck && pnpm lint && pnpm test`, then `pnpm build` twice (identical output) and `pnpm check:dist` with `backend/dist/server.js` rebuilt.
   - _Requirements: 4.1, 4.2_
+
+- [x] 5. Global budget and safe eviction in the limiter
+  - `RefusalLimiter`: a global budget of 20 reports per 10 s window, eviction of expired slots only (oldest first), no store for a new key when every slot is open, the held count of an evicted expired slot added to the global count, and a `summary` figure on the decision.
+  - Tests in `backend/test/refusal-limit.test.ts`: 200 different keys in one window give 20 reports; the summary is handed over once with the next allowed report; an open key is never evicted or reset by a flood; a full map of open keys stores nothing new; an expired slot's held count reaches the summary; a clock step back opens a new window. Update the two older tests that assumed oldest-first eviction of open keys (named in `design.md`).
+  - _Requirements: 5.1, 5.2, 5.3, 5.4, 5.5, 5.7_
+
+- [x] 6. Use the limiter's summary and a per-nick, bounded key in `onRefusal`
+  - `dispatch.ts`: `refusalKey(numeric, target, nick)` (cut and lower-cased target, nick for 441 and 443 when `isValidNick`), one `warn` summary entry before a report that carries a `summary`, and the nick left out of the line and the log when it is not valid.
+  - Tests in `backend/test/refusal-hardening.test.ts`: 200 refusals for 200 targets give at most 20 reports and one summary after the window; a tracked channel's key survives a flood; an evicted expired slot's count appears in the summary; two nicks in one channel with 441 are both reported; an invalid nick is omitted; the key stays bounded for a 5,000 character target; `server-error` is emitted for every refusal.
+  - _Requirements: 5.2, 5.6, 5.8, 6.1, 6.2, 6.3, 7.1_
+
+- [x] 7. Final checks and bundle for the extension
+  - Run `pnpm typecheck && pnpm lint && pnpm test`, then `pnpm build` twice (identical output) and `pnpm check:dist` with `backend/dist/server.js` rebuilt. The spec count in `README.md`, `docs/WRITEUP.md` and `AGENTS.md` does not change.
+  - _Requirements: 7.2, 7.3_
 
 ## Notes
 
@@ -59,6 +73,24 @@ Fixes three Minor findings from the code review of `onRefusal` (`demo-say-fixes`
       "id": 3,
       "tasks": [
         "4"
+      ]
+    },
+    {
+      "id": 4,
+      "tasks": [
+        "5"
+      ]
+    },
+    {
+      "id": 5,
+      "tasks": [
+        "6"
+      ]
+    },
+    {
+      "id": 6,
+      "tasks": [
+        "7"
       ]
     }
   ]
